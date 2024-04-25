@@ -384,7 +384,9 @@ func CryptReset(filename string) (err error) {
 			}
 		}
 	}
-	err = db.Drop("KVLite")
+	err = db.db.Update(func(tx *bolt.Tx) error {
+			return tx.DeleteBucket([]byte("KVLite"))
+	})
 	if err != nil {
 		return err
 	}
@@ -441,6 +443,6 @@ func Open(filename string, padlock ...byte) (Store, error) {
 		db.Close()
 		return nil, err
 	}
-	//err = db.Set("KVLite", "X", &X)
+	err = db.Set("KVLite", "X", &X)
 	return db, err
 }
