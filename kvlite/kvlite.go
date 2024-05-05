@@ -385,7 +385,7 @@ func CryptReset(filename string) (err error) {
 		}
 	}
 	err = db.db.Update(func(tx *bolt.Tx) error {
-			return tx.DeleteBucket([]byte("KVLite"))
+		return tx.DeleteBucket([]byte("KVLite"))
 	})
 	if err != nil {
 		return err
