@@ -18,9 +18,13 @@ type streamReadCloser struct {
 	mwrite    *multipart.Writer
 }
 
-// Returns close of source ReadCloser.
+// If chunkSize is set, dummy close, if not close source io.ReadCloser.
 func (s *streamReadCloser) Close() (err error) {
-	return s.source.Close()
+	if s.chunkSize > 0 {
+		return nil
+	} else {
+		return s.source.Close()
+	}
 }
 
 // Reads bytes from source, pushes through mimewriter to bytes.Buffer, and reads from bytes.Buffer.
@@ -84,6 +88,7 @@ func (s *streamReadCloser) Read(p []byte) (n int, err error) {
 // Transforms body of request to mime multipart upload.
 // Request body should be io.ReadCloser of file being transfered.
 // fieldname specified field for content, filename should be filename of file.
+// if byte_limit is > 0, original request.Body will need to be closed outside of function.
 func ConvertFormFile(request *http.Request, fieldname string, filename string, add_fields map[string]string, byte_limit int64) {
 	convertBody(request, fieldname, filename, add_fields, byte_limit)
 }
