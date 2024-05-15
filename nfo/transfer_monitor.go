@@ -4,6 +4,7 @@ import (
 	"fmt"
 	. "github.com/cmcoffee/snugforge/xsync"
 	"golang.org/x/crypto/ssh/terminal"
+	"io"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -23,6 +24,23 @@ type ReadSeekCloser interface {
 	Seek(offset int64, whence int) (int64, error)
 	Read(p []byte) (n int, err error)
 	Close() error
+}
+
+type nopSeekCloser struct {
+	io.Reader
+}
+
+func (T nopSeekCloser) Close() (err error) {
+	return nil
+}
+
+func (T nopSeekCloser) Seek(offset int64, whence int) (int64, error) {
+	return 0, nil
+}
+
+// Wrap around close and seek functions.
+func NopSeekCloser(input io.Reader) ReadSeekCloser {
+	return &nopSeekCloser{input}
 }
 
 func termWidth() int {

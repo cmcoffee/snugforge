@@ -5,6 +5,13 @@
 
 ## Usage
 
+#### func  PromptBool
+
+```go
+func PromptBool(question string, def bool) bool
+```
+Provides simple y/n prompt, question should end in a '?'.
+
 #### type Options
 
 ```go

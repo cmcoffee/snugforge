@@ -398,6 +398,13 @@ type ReadSeekCloser interface {
 
 ReadSeekCloser interface
 
+#### func  NopSeekCloser
+
+```go
+func NopSeekCloser(input io.Reader) ReadSeekCloser
+```
+Wrap around close and seek functions.
+
 #### func  TransferCounter
 
 ```go

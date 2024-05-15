@@ -20,4 +20,5 @@ func ConvertFormFile(request *http.Request, fieldname string, filename string, a
 ```
 Transforms body of request to mime multipart upload. Request body should be
 io.ReadCloser of file being transfered. fieldname specified field for content,
-filename should be filename of file.
+filename should be filename of file. if byte_limit is > 0, original request.Body
+will need to be closed outside of function.
