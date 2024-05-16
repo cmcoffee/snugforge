@@ -162,8 +162,8 @@ func (E *EFlagSet) Bool(name string, usage string) *bool {
 	return E.FlagSet.Bool(name, false, usage)
 }
 
-// Maps CLI Args not set to flags, to flags in order of addition.
-func (E *EFlagSet) CLIArgs(name ...string) {
+// Maps flags as inline arguments.
+func (E *EFlagSet) InlineArgs(name ...string) {
 	fmap := make(map[string]*flag.Flag)
 
 	E.VisitAll(func(input *Flag) {
@@ -183,7 +183,7 @@ type EFlagSet struct {
 	Header        string // Header presented at start of help.
 	Footer        string // Footer presented at end of help.
 	AdaptArgs     bool   // Reorders flags and arguments so flags come first, non-flag arguments second, unescapes arguments with '\' escape character.
-	ShowSyntax    bool   // Display Usage: line, CLIArgs will automatically display usage info.
+	ShowSyntax    bool   // Display Usage: line, InlineArgs will automatically display usage info.
 	alias         map[string]string
 	out           io.Writer
 	errorHandling ErrorHandling
@@ -211,7 +211,7 @@ var cmd = EFlagSet{
 }
 
 var (
-	CLIArgs       = cmd.CLIArgs
+	InlineArgs    = cmd.InlineArgs
 	SyntaxName    = cmd.SyntaxName
 	SetOutput     = cmd.SetOutput
 	PrintDefaults = cmd.PrintDefaults
