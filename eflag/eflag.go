@@ -1,5 +1,5 @@
 // Package 'eflag' is a wrapper around Go's standard flag, it provides enhancments for:
-// Adding Header's and Footer's to Usage.
+// Adding HelpText and Footer's to Usage.
 // Adding Aliases to flags. (ie.. -d, --debug)
 // Enhances formatting for flag usage.
 // Aside from that everything else is standard from the flag library.
@@ -180,7 +180,7 @@ func (E *EFlagSet) InlineArgs(name ...string) {
 // A EFlagSet is a set of defined flags.
 type EFlagSet struct {
 	name          string
-	Header        string // Header presented at start of help.
+	HelpText      string // HelpText presented at start of help.
 	Footer        string // Footer presented at end of help.
 	AdaptArgs     bool   // Reorders flags and arguments so flags come first, non-flag arguments second, unescapes arguments with '\' escape character.
 	ShowSyntax    bool   // Display Usage: line, InlineArgs will automatically display usage info.
@@ -248,8 +248,8 @@ var (
 )
 
 // Sets the header for usage info.
-func Header(input string) {
-	cmd.Header = input
+func HelpText(input string) {
+	cmd.HelpText = input
 }
 
 // Sets the footer for usage info.
@@ -599,9 +599,6 @@ func (s *EFlagSet) Parse(args []string) (err error) {
 
 	// Implement new Usage function.
 	s.Usage = func() {
-		if s.Header != "" {
-			fmt.Fprintf(s.out, "%s\n", s.Header)
-		}
 		var (
 			arg_names []string
 			has_multi bool
@@ -619,12 +616,18 @@ func (s *EFlagSet) Parse(args []string) (err error) {
 			}
 		}
 		if s.name == "" {
+			if s.HelpText != "" {
+				fmt.Fprintf(s.out, "%s\n", s.HelpText)
+			}
 			fmt.Fprintf(s.out, "Options:\n")
 		} else {
 			if len(arg_names) > 0 {
 				fmt.Fprintf(s.out, "Usage: %s [options] %s\n\n", s.syntaxName, strings.Join(arg_names, " "))
 			} else if s.ShowSyntax {
 				fmt.Fprintf(s.out, "Usage: %s [options]\n\n", s.syntaxName)
+			}
+			if s.HelpText != "" {
+				fmt.Fprintf(s.out, "%s\n", s.HelpText)
 			}
 			fmt.Fprintf(s.out, "Available '%s' options:\n", s.name)
 		}

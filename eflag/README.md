@@ -3,7 +3,7 @@
     import "github.com/cmcoffee/snugforge/eflag"
 
 Package 'eflag' is a wrapper around Go's standard flag, it provides enhancments
-for: Adding Header's and Footer's to Usage. Adding Aliases to flags. (ie.. -d,
+for: Adding HelpText and Footer's to Usage. Adding Aliases to flags. (ie.. -d,
 --debug) Enhances formatting for flag usage. Aside from that everything else is
 standard from the flag library.
 
@@ -11,7 +11,7 @@ standard from the flag library.
 
 ```go
 var (
-	CLIArgs       = cmd.CLIArgs
+	InlineArgs    = cmd.InlineArgs
 	SyntaxName    = cmd.SyntaxName
 	SetOutput     = cmd.SetOutput
 	PrintDefaults = cmd.PrintDefaults
@@ -59,10 +59,10 @@ func Footer(input string)
 ```
 Sets the footer for usage info.
 
-#### func  Header
+#### func  HelpText
 
 ```go
-func Header(input string)
+func HelpText(input string)
 ```
 Sets the header for usage info.
 
@@ -84,10 +84,10 @@ Shows usage.
 
 ```go
 type EFlagSet struct {
-	Header     string // Header presented at start of help.
+	HelpText   string // HelpText presented at start of help.
 	Footer     string // Footer presented at end of help.
 	AdaptArgs  bool   // Reorders flags and arguments so flags come first, non-flag arguments second, unescapes arguments with '\' escape character.
-	ShowSyntax bool   // Display Usage: line, CLIArgs will automatically display usage info.
+	ShowSyntax bool   // Display Usage: line, InlineArgs will automatically display usage info.
 
 	*flag.FlagSet
 }
@@ -126,12 +126,12 @@ func (E *EFlagSet) BoolVar(p *bool, name string, usage string)
 BoolVar defines a bool flag with specified name, and usage string. The argument
 p points to a bool variable in which to store the value of the flag.
 
-#### func (*EFlagSet) CLIArgs
+#### func (*EFlagSet) InlineArgs
 
 ```go
-func (E *EFlagSet) CLIArgs(name ...string)
+func (E *EFlagSet) InlineArgs(name ...string)
 ```
-Maps CLI Args not set to flags, to flags in order of addition.
+Maps flags as inline arguments.
 
 #### func (*EFlagSet) IsSet
 
