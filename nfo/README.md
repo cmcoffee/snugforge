@@ -36,6 +36,7 @@ const (
 	LeftToRight = 1 << iota // Display progress bar left to right.
 	RightToLeft             // Display progress bar right to left.
 	NoRate                  // Do not show transfer rate, left to right.
+	LimitWidth              // Limit width of display to 150 chars.
 
 )
 ```
@@ -398,10 +399,10 @@ type ReadSeekCloser interface {
 
 ReadSeekCloser interface
 
-#### func  NopSeekCloser
+#### func  NopSeeker
 
 ```go
-func NopSeekCloser(input io.Reader) ReadSeekCloser
+func NopSeeker(input io.ReadCloser) ReadSeekCloser
 ```
 Wrap around close and seek functions.
 

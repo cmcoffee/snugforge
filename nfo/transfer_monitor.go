@@ -26,21 +26,17 @@ type ReadSeekCloser interface {
 	Close() error
 }
 
-type nopSeekCloser struct {
-	io.Reader
+type nopSeeker struct {
+	io.ReadCloser
 }
 
-func (T nopSeekCloser) Close() (err error) {
-	return nil
-}
-
-func (T nopSeekCloser) Seek(offset int64, whence int) (int64, error) {
+func (T nopSeeker) Seek(offset int64, whence int) (int64, error) {
 	return 0, nil
 }
 
 // Wrap around close and seek functions.
-func NopSeekCloser(input io.Reader) ReadSeekCloser {
-	return &nopSeekCloser{input}
+func NopSeeker(input io.ReadCloser) ReadSeekCloser {
+	return &nopSeeker{input}
 }
 
 func termWidth() int {
@@ -56,6 +52,7 @@ const (
 	LeftToRight = 1 << iota // Display progress bar left to right.
 	RightToLeft             // Display progress bar right to left.
 	NoRate                  // Do not show transfer rate, left to right.
+	LimitWidth              // Limit width of display to 150 chars.
 	trans_active
 	trans_closed
 	trans_complete
@@ -372,6 +369,9 @@ func (t *tmon) progressBar(name string) string {
 	}
 
 	sz := termWidth() - 3
+	if t.flag.Has(LimitWidth) && sz > 100 {
+		sz = 100
+	}
 
 	first_half := fmt.Sprintf("%s: %s", name, t.showRate())
 	second_half := fmt.Sprintf("(%s/%s)", HumanSize(t.transferred), HumanSize(t.total_size))
