@@ -369,8 +369,8 @@ func (t *tmon) progressBar(name string) string {
 	}
 
 	sz := termWidth() - 3
-	if t.flag.Has(LimitWidth) && sz > 100 {
-		sz = 100
+	if t.flag.Has(LimitWidth) && sz > 86 {
+		sz = 86
 	}
 
 	first_half := fmt.Sprintf("%s: %s", name, t.showRate())

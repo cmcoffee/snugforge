@@ -100,6 +100,13 @@ func BlockShutdown()
 Global wait group, allows running processes to finish up tasks before app
 shutdown
 
+#### func  ConfirmDefault
+
+```go
+func ConfirmDefault(prompt string, default_answer bool) bool
+```
+Get confirmation w/ Default answer.
+
 #### func  Debug
 
 ```go

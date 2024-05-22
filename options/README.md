@@ -5,13 +5,6 @@
 
 ## Usage
 
-#### func  PromptBool
-
-```go
-func PromptBool(question string, def bool) bool
-```
-Provides simple y/n prompt, question should end in a '?'.
-
 #### type Options
 
 ```go
@@ -84,6 +77,24 @@ func (T *Options) Register(input Value)
 ```
 Registers an Value with Options Menu
 
+#### func (*Options) Secret
+
+```go
+func (O *Options) Secret(desc string, value string, help string) *string
+```
+Secret defines an string menu option displaying with specified desc in menu,
+default value, and help string. The return value is the address of an string
+variable that stores the value of the option.
+
+#### func (*Options) SecretVar
+
+```go
+func (O *Options) SecretVar(p *string, desc string, value string, help string)
+```
+SecretVar defines a string with specified name, value is displayed as masked,
+default value and usage string. The argument p points to a string variable in
+which to store the value of the flag.
+
 #### func (*Options) Select
 
 ```go
@@ -104,7 +115,7 @@ variable that stores the value of the option.
 #### func (*Options) StringVar
 
 ```go
-func (O *Options) StringVar(p *string, desc string, value string, help string, mask_value bool)
+func (O *Options) StringVar(p *string, desc string, value string, help string)
 ```
 StringVar defines a string flag with specified name, default value, and usage
 string. The argument p points to a string variable in which to store the value

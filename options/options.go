@@ -36,40 +36,6 @@ func NewOptions(header, footer string, exit_char rune) *Options {
 	}
 }
 
-// Provides simple y/n prompt, question should end in a '?'.
-func PromptBool(question string, def bool) bool {
-	var (
-		def_answer  string
-		opp_answer  string
-		text_buffer bytes.Buffer
-	)
-	if def {
-		def_answer = "Y"
-		opp_answer = "n"
-	} else {
-		def_answer = "N"
-		opp_answer = "y"
-	}
-	for {
-		text_buffer.Reset()
-		fmt.Printf("%s [%s/%s]: ", question, opp_answer, def_answer)
-		input := GetInput(text_buffer.String())
-		txt := strings.ToLower(input)
-		switch txt {
-		case "y":
-			return true
-		case "n":
-			return false
-		case "":
-			return def
-		default:
-			Stdout("\n[ERROR] Unrecognized Selection: '%s'\n\n", txt)
-			continue
-		}
-
-	}
-}
-
 // Registers an Value with Options Menu
 func (T *Options) Register(input Value) {
 	T.config = append(T.config, input)
@@ -168,20 +134,44 @@ func (O *Options) String(desc string, value string, help string, mask_value bool
 		desc:  desc,
 		value: &value,
 		help:  help,
-		mask:  mask_value,
+		mask:  false,
 	}
 	O.Register(new_var)
 	return &value
 }
 
-// StringVar defines a string flag with specified name, default value, and usage string. The argument p points to a string variable in which to store the value of the flag.
-func (O *Options) StringVar(p *string, desc string, value string, help string, mask_value bool) {
+// Secret defines an string menu option displaying with specified desc in menu, default value, and help string. The return value is the address of an string variable that stores the value of the option.
+func (O *Options) Secret(desc string, value string, help string) *string {
+	new_var := &stringValue{
+		desc:  desc,
+		value: &value,
+		help:  help,
+		mask:  true,
+	}
+	O.Register(new_var)
+	return &value
+}
+
+// SecretVar defines a string with specified name, value is displayed as masked, default value and usage string. The argument p points to a string variable in which to store the value of the flag.
+func (O *Options) SecretVar(p *string, desc string, value string, help string) {
 	*p = value
 	O.Register(&stringValue{
 		desc:  desc,
 		value: p,
 		help:  help,
-		mask:  mask_value,
+		mask:  true,
+	})
+	return
+}
+
+// StringVar defines a string flag with specified name, default value, and usage string. The argument p points to a string variable in which to store the value of the flag.
+func (O *Options) StringVar(p *string, desc string, value string, help string) {
+	*p = value
+	O.Register(&stringValue{
+		desc:  desc,
+		value: p,
+		help:  help,
+		mask:  false,
 	})
 	return
 }

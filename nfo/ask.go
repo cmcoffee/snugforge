@@ -64,6 +64,30 @@ func GetConfirm(prompt string) bool {
 	}
 }
 
+// Get confirmation w/ Default answer.
+func ConfirmDefault(prompt string, default_answer bool) bool {
+	for {
+		var question string
+		if default_answer {
+			question = fmt.Sprintf("%s (Y/n): ", prompt)
+		} else {
+			question = fmt.Sprintf("%s (y/N): ")
+		}
+		resp := GetInput(question)
+		resp = strings.ToLower(resp)
+		resp = strings.TrimSpace(resp)
+		switch resp {
+		case "y":
+			return true
+		case "n":
+			return false
+		case "":
+			return default_answer
+		}
+		continue
+	}
+}
+
 // Removes newline characters
 func cleanInput(input string) (output string) {
 	var output_bytes []rune
