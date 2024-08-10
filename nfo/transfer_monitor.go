@@ -5,7 +5,6 @@ import (
 	. "github.com/cmcoffee/snugforge/xsync"
 	"golang.org/x/crypto/ssh/terminal"
 	"io"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -49,10 +48,11 @@ func termWidth() int {
 }
 
 const (
-	LeftToRight = 1 << iota // Display progress bar left to right.
-	RightToLeft             // Display progress bar right to left.
-	NoRate                  // Do not show transfer rate, left to right.
-	LimitWidth              // Limit width of display to 150 chars.
+	LeftToRight        = 1 << iota // Display progress bar left to right.
+	RightToLeft                    // Display progress bar right to left.
+	NoRate                         // Do not show transfer rate, left to right.
+	LimitWidth                     // Limit width of display to 150 chars.
+	ProgressBarSummary             // Maintain progress bar when logging complete transfer.
 	trans_active
 	trans_closed
 	trans_complete
@@ -334,32 +334,6 @@ func (t *tmon) showRate() (rate string) {
 	}
 }
 
-// Draws a progress bar using sz as the size.
-func DrawProgressBar(sz int, current, max int64, text string) string {
-	var num int
-	if max > 0 {
-		num = int(float64(current) / float64(max) * 100)
-	} else {
-		num = 0
-	}
-
-	display := make([]rune, sz)
-	x := num * sz / 100
-
-	for n := range display {
-		if n < x {
-			display[n] = '░'
-		} else {
-			display[n] = '.'
-		}
-	}
-
-	perc := strconv.Itoa(num)
-
-	return fmt.Sprintf("[%s]%s%%: %s", string(display[0:]), string(append([]rune{' ', ' '}[len(perc)-1:], []rune(perc)[0:]...)), text)
-
-}
-
 // Produces progress bar for information on update.
 func (t *tmon) progressBar(name string) string {
 	num := int((float64(atomic.LoadInt64(&t.transferred)) / float64(t.total_size)) * 100)
@@ -378,7 +352,7 @@ func (t *tmon) progressBar(name string) string {
 
 	sz = sz - len(first_half) - 35
 
-	if t.flag.Has(trans_closed) && !t.flag.Has(NoRate) || sz <= 0 {
+	if t.flag.Has(trans_closed) && !t.flag.Has(NoRate) && !t.flag.Has(ProgressBarSummary) || sz <= 0 {
 		sz = 10
 	}
 

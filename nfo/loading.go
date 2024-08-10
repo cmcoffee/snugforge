@@ -3,6 +3,7 @@ package nfo
 import (
 	"fmt"
 	"github.com/cmcoffee/snugforge/xsync"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -102,6 +103,33 @@ type progressBar struct {
 	name     string
 	anim_len int
 	backup   *loading_backup
+}
+
+// Draws a progress bar using sz as the size.
+func DrawProgressBar(sz int, current, max int64, text string) string {
+	var num int
+	if max > 0 {
+		num = int(float64(current) / float64(max) * 100)
+	} else {
+		num = 0
+	}
+
+	display := make([]rune, sz)
+	x := num * sz / 100
+
+	for n := range display {
+		if n < x {
+			display[n] = '░'
+		} else {
+			display[n] = '.'
+		}
+	}
+
+	perc := strconv.Itoa(num)
+	perc = string(append([]rune{' ', ' '}[len(perc)-1:], []rune(perc)[0:]...))
+
+	return fmt.Sprintf(" [%s%%] [%s] >> %s", perc, string(display[0:]), text)
+
 }
 
 var ProgressBar = new(progressBar)

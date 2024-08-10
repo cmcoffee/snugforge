@@ -33,10 +33,11 @@ Standard Loggers, minus debug and trace.
 
 ```go
 const (
-	LeftToRight = 1 << iota // Display progress bar left to right.
-	RightToLeft             // Display progress bar right to left.
-	NoRate                  // Do not show transfer rate, left to right.
-	LimitWidth              // Limit width of display to 150 chars.
+	LeftToRight        = 1 << iota // Display progress bar left to right.
+	RightToLeft                    // Display progress bar right to left.
+	NoRate                         // Do not show transfer rate, left to right.
+	LimitWidth                     // Limit width of display to 150 chars.
+	ProgressBarSummary             // Maintain progress bar when logging complete transfer.
 
 )
 ```
