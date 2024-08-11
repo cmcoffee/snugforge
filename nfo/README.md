@@ -274,13 +274,6 @@ func PressEnter(prompt string)
 ```
 Prompt to press enter.
 
-#### func  ProgressBar
-
-```go
-func ProgressBar(name string, max int) *progressBar
-```
-Updates loading to be a progress bar.
-
 #### func  SetFile
 
 ```go
@@ -391,6 +384,24 @@ Disconnect form syslog
 func Warn(vars ...interface{})
 ```
 Log as Warn.
+
+#### type ProgressBar
+
+```go
+type ProgressBar interface {
+	Add(num int) // Add num to progress bar.
+	Set(num int) // Set num of progress bar.
+	Done()       // Mark progress bar as complete.
+}
+```
+
+
+#### func  NewProgressBar
+
+```go
+func NewProgressBar(name string, max int) ProgressBar
+```
+Updates loading to be a progress bar.
 
 #### type ReadSeekCloser
 

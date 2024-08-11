@@ -95,10 +95,14 @@ func (L *loading) Hide() {
 	Flash("")
 }
 
+type ProgressBar interface {
+	Add(num int) // Add num to progress bar.
+	Set(num int) // Set num of progress bar.
+	Done()       // Mark progress bar as complete.
+}
+
 type progressBar struct {
-	name string
-	max  int
-	tm   ReadSeekCloser
+	tm ReadSeekCloser
 }
 
 type b_closer struct {
@@ -110,10 +114,8 @@ func (b b_closer) Close() error {
 }
 
 // Updates loading to be a progress bar.
-func ProgressBar(name string, max int) *progressBar {
+func NewProgressBar(name string, max int) ProgressBar {
 	x := new(progressBar)
-	x.max = max
-	x.name = name
 	var dummy b_closer
 	dummy.Reader = bytes.NewReader(make([]byte, max))
 
