@@ -33,11 +33,12 @@ Standard Loggers, minus debug and trace.
 
 ```go
 const (
-	LeftToRight        = 1 << iota // Display progress bar left to right.
+	LeftToRight        = 1 << iota // Display progress bar left to right. (Default Behavior)
 	RightToLeft                    // Display progress bar right to left.
 	NoRate                         // Do not show transfer rate, left to right.
-	LimitWidth                     // Limit width of display to 150 chars.
-	ProgressBarSummary             // Maintain progress bar when logging complete transfer.
+	MaxWidth                       // Scale width to maximum.
+	ProgressBarSummary             // Maintain progress bar when transfer complete.
+	NoSummary                      // Do not log a summary after completion.
 
 )
 ```
@@ -60,10 +61,6 @@ False writer for discarding output.
 var PleaseWait = new(loading)
 ```
 PleaseWait is a wait prompt to display between requests.
-
-```go
-var ProgressBar = new(progressBar)
-```
 
 #### func  Aux
 
@@ -130,13 +127,6 @@ keyword defer if you want to run it now and remove it from global defer.
 func DisableExport(flag uint32)
 ```
 Specific which logger to not export.
-
-#### func  DrawProgressBar
-
-```go
-func DrawProgressBar(sz int, current, max int64, text string) string
-```
-Draws a progress bar using sz as the size.
 
 #### func  EnableExport
 
@@ -283,6 +273,13 @@ Log as Notice.
 func PressEnter(prompt string)
 ```
 Prompt to press enter.
+
+#### func  ProgressBar
+
+```go
+func ProgressBar(name string, max int) *progressBar
+```
+Updates loading to be a progress bar.
 
 #### func  SetFile
 

@@ -1,9 +1,9 @@
 package nfo
 
 import (
-	"fmt"
+	//"fmt"
+	"bytes"
 	"github.com/cmcoffee/snugforge/xsync"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -96,90 +96,42 @@ func (L *loading) Hide() {
 }
 
 type progressBar struct {
-	mutex    sync.Mutex
-	cur      int64
-	max      int64
-	working  bool
-	name     string
-	anim_len int
-	backup   *loading_backup
+	name string
+	max  int
+	tm   ReadSeekCloser
 }
 
-// Draws a progress bar using sz as the size.
-func DrawProgressBar(sz int, current, max int64, text string) string {
-	var num int
-	if max > 0 {
-		num = int(float64(current) / float64(max) * 100)
-	} else {
-		num = 0
-	}
-
-	display := make([]rune, sz)
-	x := num * sz / 100
-
-	for n := range display {
-		if n < x {
-			display[n] = '░'
-		} else {
-			display[n] = '.'
-		}
-	}
-
-	perc := strconv.Itoa(num)
-	perc = string(append([]rune{' ', ' '}[len(perc)-1:], []rune(perc)[0:]...))
-
-	return fmt.Sprintf(" [%s%%] [%s] >> %s", perc, string(display[0:]), text)
-
+type b_closer struct {
+	*bytes.Reader
 }
 
-var ProgressBar = new(progressBar)
-
-// Produces progress bar for information on update.
-func (p *progressBar) draw() string {
-	cur := atomic.LoadInt64(&p.cur)
-	max := atomic.LoadInt64(&p.max)
-
-	return DrawProgressBar(27-p.anim_len, cur, max, fmt.Sprintf("%d/%d %s.", cur, max, p.name))
-}
-
-func (p *progressBar) updateMessage() string {
-	return p.draw()
+func (b b_closer) Close() error {
+	return nil
 }
 
 // Updates loading to be a progress bar.
-func (p *progressBar) New(name string, max int) {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
+func ProgressBar(name string, max int) *progressBar {
+	x := new(progressBar)
+	x.max = max
+	x.name = name
+	var dummy b_closer
+	dummy.Reader = bytes.NewReader(make([]byte, max))
 
-	if p.working {
-		return
-	}
-
-	p.cur = 0
-	p.max = int64(max)
-	p.name = name
-	p.backup = PleaseWait.Backup()
-	PleaseWait.Set(p.updateMessage, PleaseWait.anim_1)
-	p.anim_len = len(PleaseWait.anim_1)
-	p.working = true
+	x.tm = TransferMonitor(name, int64(max), internal, dummy)
+	return x
 }
 
 // Adds to progress bar.
 func (p *progressBar) Add(num int) {
-	atomic.StoreInt64(&p.cur, atomic.LoadInt64(&p.cur)+int64(num))
+	p.tm.Read(make([]byte, num))
+}
+
+// Specify number set on progress bar.
+func (p *progressBar) Set(num int) {
+	p.tm.Seek(int64(num), 0)
 }
 
 // Complete progress bar, return to loading.
 func (p *progressBar) Done() {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
-
-	if !p.working {
-		return
-	}
-
-	if p.backup != nil {
-		p.backup.Restore()
-	}
-	p.working = false
+	p.tm.Close()
 }

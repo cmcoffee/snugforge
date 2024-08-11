@@ -48,11 +48,13 @@ func termWidth() int {
 }
 
 const (
-	LeftToRight        = 1 << iota // Display progress bar left to right.
+	LeftToRight        = 1 << iota // Display progress bar left to right. (Default Behavior)
 	RightToLeft                    // Display progress bar right to left.
 	NoRate                         // Do not show transfer rate, left to right.
-	LimitWidth                     // Limit width of display to 150 chars.
-	ProgressBarSummary             // Maintain progress bar when logging complete transfer.
+	MaxWidth                       // Scale width to maximum.
+	ProgressBarSummary             // Maintain progress bar when transfer complete.
+	NoSummary                      // Do not log a summary after completion.
+	internal
 	trans_active
 	trans_closed
 	trans_complete
@@ -99,10 +101,14 @@ func TransferMonitor(name string, total_size int64, flag int, source ReadSeekClo
 		b_flag.Set(LeftToRight)
 	}
 
+	if b_flag.Has(internal) {
+		b_flag.Set(NoRate | NoSummary)
+	}
+
 	if !b_flag.Has(NoRate) {
-		target_size = 18
+		target_size = 25
 	} else {
-		target_size = 36
+		target_size = 40
 	}
 
 	for i, v := range name {
@@ -114,7 +120,7 @@ func TransferMonitor(name string, total_size int64, flag int, source ReadSeekClo
 		}
 	}
 
-	if len(short_name) < target_size {
+	if len(short_name) < target_size && !b_flag.Has(internal) {
 		x := len(short_name) - 1
 		var y []rune
 		for i := 0; i <= target_size-x; i++ {
@@ -225,10 +231,8 @@ func (tm *tmon) Read(p []byte) (n int, err error) {
 // Close out speicfic transfer monitor
 func (tm *tmon) Close() error {
 	tm.flag.Set(trans_closed)
-	if !tm.flag.Has(NoRate) {
-		if tm.transferred > 0 || tm.total_size == 0 {
-			Log(tm.showTransfer(true))
-		}
+	if (tm.transferred > 0 || tm.total_size == 0) && !tm.flag.Has(NoSummary) {
+		Log(tm.showTransfer(true))
 	}
 	return tm.source.Close()
 }
@@ -272,11 +276,7 @@ func (t *tmon) showTransfer(summary bool) string {
 
 	// 35 + 8 +8 + 8 + 8
 	if t.total_size > -1 {
-		if !t.flag.Has(NoRate) {
-			return fmt.Sprintf("%s", t.progressBar(name))
-		} else {
-			return DrawProgressBar(19, t.transferred, t.total_size, t.name)
-		}
+		return fmt.Sprintf("%s", t.progressBar(name))
 	} else {
 		return fmt.Sprintf("%s: %s (%s) ", t.name, rate, HumanSize(transferred))
 	}
@@ -327,11 +327,7 @@ func (t *tmon) showRate() (rate string) {
 		t.flag.Set(trans_complete)
 	}
 
-	if !t.flag.Has(trans_closed) {
-		return string(append([]rune{' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '}[len(rate)-1:], []rune(rate)[0:]...))
-	} else {
-		return t.rate
-	}
+	return t.rate
 }
 
 // Produces progress bar for information on update.
@@ -343,48 +339,73 @@ func (t *tmon) progressBar(name string) string {
 	}
 
 	sz := termWidth() - 3
-	if t.flag.Has(LimitWidth) && sz > 86 {
-		sz = 86
+	if !t.flag.Has(MaxWidth) && sz > 100 {
+		sz = 100
 	}
 
-	first_half := fmt.Sprintf("%s: %s", name, t.showRate())
-	second_half := fmt.Sprintf("(%s/%s)", HumanSize(t.transferred), HumanSize(t.total_size))
+	var first_half, second_half string
 
-	sz = sz - len(first_half) - 35
+	if !t.flag.Has(NoRate) {
+		first_half = fmt.Sprintf("%s: %s", name, t.showRate())
+		second_half = fmt.Sprintf("(%s/%s)", HumanSize(t.transferred), HumanSize(t.total_size))
+	} else {
+		first_half = fmt.Sprintf("%s:", name)
+	}
 
-	if t.flag.Has(trans_closed) && !t.flag.Has(NoRate) && !t.flag.Has(ProgressBarSummary) || sz <= 0 {
+	sz = sz - len(first_half) - len(second_half) - 15
+
+	if t.flag.Has(trans_closed) && !t.flag.Has(ProgressBarSummary) && !t.flag.Has(NoSummary) || sz <= 0 {
 		sz = 10
 	}
 
-	display := make([]rune, sz)
-	x := num * sz / 100
+	create_display := func(num, sz int) []rune {
+		var left, right, done, blank rune
 
-	if t.flag.Has(LeftToRight) {
-		for n := range display {
-			if n < x {
-				if n+1 < x {
-					display[n] = '='
+		if !t.flag.Has(NoRate) {
+			right = '>'
+			left = '<'
+			done = '='
+			blank = ' '
+		} else {
+			right = '#'
+			left = '#'
+			done = '#'
+			blank = '.'
+		}
+
+		display := make([]rune, sz)
+		x := num * sz / 100
+
+		if !t.flag.Has(RightToLeft) {
+			for n := range display {
+				if n < x {
+					if n+1 < x {
+						display[n] = done
+					} else {
+						display[n] = right
+					}
 				} else {
-					display[n] = '>'
+					display[n] = blank
 				}
-			} else {
-				display[n] = ' '
+			}
+		} else {
+			x = sz - x - 1
+			for n := range display {
+				if n > x {
+					if n-1 > x {
+						display[n] = done
+					} else {
+						display[n] = left
+					}
+				} else {
+					display[n] = blank
+				}
 			}
 		}
-	} else {
-		x = sz - x - 1
-		for n := range display {
-			if n > x {
-				if n-1 > x {
-					display[n] = '='
-				} else {
-					display[n] = '<'
-				}
-			} else {
-				display[n] = ' '
-			}
-		}
+		return display
 	}
+
+	display := create_display(num, sz)
 
 	if sz > 10 {
 		return fmt.Sprintf("%s [%s] %d%% %s ", first_half, string(display[0:]), int(num), second_half)
@@ -395,25 +416,4 @@ func (t *tmon) progressBar(name string) string {
 			return fmt.Sprintf("%s %d%% %s", first_half, int(num), second_half)
 		}
 	}
-}
-
-// Provides human readable file sizes.
-func HumanSize(bytes int64) string {
-
-	names := []string{
-		"Bytes",
-		"KB",
-		"MB",
-		"GB",
-	}
-
-	suffix := 0
-	size := float64(bytes)
-
-	for size >= 1024 && suffix < len(names)-1 {
-		size = size / 1024
-		suffix++
-	}
-
-	return fmt.Sprintf("%.1f%s", size, names[suffix])
 }
