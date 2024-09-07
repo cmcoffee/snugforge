@@ -120,7 +120,7 @@ func TransferMonitor(name string, total_size int64, flag int, source ReadSeekClo
 		}
 	}
 
-	if len(short_name) < target_size && !b_flag.Has(internal) {
+	if len(short_name) < target_size && (!b_flag.Has(internal) && !b_flag.Has(ProgressBarSummary)) {
 		x := len(short_name) - 1
 		var y []rune
 		for i := 0; i <= target_size-x; i++ {

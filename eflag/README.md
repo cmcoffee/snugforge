@@ -3,7 +3,7 @@
     import "github.com/cmcoffee/snugforge/eflag"
 
 Package 'eflag' is a wrapper around Go's standard flag, it provides enhancments
-for: Adding HelpText and Footer's to Usage. Adding Aliases to flags. (ie.. -d,
+for: Adding Header and Footer's to Usage. Adding Aliases to flags. (ie.. -d,
 --debug) Enhances formatting for flag usage. Aside from that everything else is
 standard from the flag library.
 
@@ -59,10 +59,10 @@ func Footer(input string)
 ```
 Sets the footer for usage info.
 
-#### func  HelpText
+#### func  Header
 
 ```go
-func HelpText(input string)
+func Header(input string)
 ```
 Sets the header for usage info.
 
@@ -84,7 +84,7 @@ Shows usage.
 
 ```go
 type EFlagSet struct {
-	HelpText   string // HelpText presented at start of help.
+	Header     string // Header presented at start of help.
 	Footer     string // Footer presented at end of help.
 	AdaptArgs  bool   // Reorders flags and arguments so flags come first, non-flag arguments second, unescapes arguments with '\' escape character.
 	ShowSyntax bool   // Display Usage: line, InlineArgs will automatically display usage info.

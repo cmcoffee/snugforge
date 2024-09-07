@@ -1,5 +1,5 @@
 // Package 'eflag' is a wrapper around Go's standard flag, it provides enhancments for:
-// Adding HelpText and Footer's to Usage.
+// Adding Header and Footer's to Usage.
 // Adding Aliases to flags. (ie.. -d, --debug)
 // Enhances formatting for flag usage.
 // Aside from that everything else is standard from the flag library.
@@ -118,7 +118,7 @@ func escape_array(input []string) string {
 				temp = append(temp, v)
 			}
 		}
-		output = append(output, fmt.Sprintf("\"%s\"", string(temp[0:])))
+		output = append(output, fmt.Sprintf("%s", string(temp[0:])))
 		temp = temp[0:0]
 	}
 	return strings.Join(output, ",")
@@ -180,7 +180,7 @@ func (E *EFlagSet) InlineArgs(name ...string) {
 // A EFlagSet is a set of defined flags.
 type EFlagSet struct {
 	name          string
-	HelpText      string // HelpText presented at start of help.
+	Header        string // Header presented at start of help.
 	Footer        string // Footer presented at end of help.
 	AdaptArgs     bool   // Reorders flags and arguments so flags come first, non-flag arguments second, unescapes arguments with '\' escape character.
 	ShowSyntax    bool   // Display Usage: line, InlineArgs will automatically display usage info.
@@ -248,8 +248,8 @@ var (
 )
 
 // Sets the header for usage info.
-func HelpText(input string) {
-	cmd.HelpText = input
+func Header(input string) {
+	cmd.Header = input
 }
 
 // Sets the footer for usage info.
@@ -616,8 +616,8 @@ func (s *EFlagSet) Parse(args []string) (err error) {
 			}
 		}
 		if s.name == "" {
-			if s.HelpText != "" {
-				fmt.Fprintf(s.out, "%s\n", s.HelpText)
+			if s.Header != "" {
+				fmt.Fprintf(s.out, "%s\n", s.Header)
 			}
 			fmt.Fprintf(s.out, "Options:\n")
 		} else {
@@ -626,8 +626,8 @@ func (s *EFlagSet) Parse(args []string) (err error) {
 			} else if s.ShowSyntax {
 				fmt.Fprintf(s.out, "Usage: %s [options]\n\n", s.syntaxName)
 			}
-			if s.HelpText != "" {
-				fmt.Fprintf(s.out, "%s\n", s.HelpText)
+			if s.Header != "" {
+				fmt.Fprintf(s.out, "%s\n", s.Header)
 			}
 			fmt.Fprintf(s.out, "Available '%s' options:\n", s.name)
 		}
