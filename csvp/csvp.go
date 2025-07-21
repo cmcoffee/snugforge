@@ -8,15 +8,19 @@ import (
 	"strings"
 )
 
+// rowReadError is an error type for issues during CSV row reading.
 type rowReadError error
+
+// rowProcessError represents an error encountered while processing a row.
 type rowProcessError error
 
+// CSVReader processes CSV data row by row.
 type CSVReader struct {
 	Processor    func(row []string) (err error)                     // Callback funcction for each row read.
 	ErrorHandler func(line int, row string, err error) (abort bool) // ErrorHandler when problem reading CSV or processing CSV.
 }
 
-// Allocates a New CSVReader.
+// NewReader creates and returns a new CSVReader instance.
 func NewReader() *CSVReader {
 	return &CSVReader{
 		func(row []string) (err error) {
@@ -28,7 +32,8 @@ func NewReader() *CSVReader {
 	}
 }
 
-// Returns true if error is generatored from reading the CSV.
+// IsReadError reports whether err is a row read error.
+// It checks if the error is of type rowReadError.
 func IsReadError(err error) bool {
 	if _, ok := err.(rowReadError); ok {
 		return true
@@ -36,7 +41,9 @@ func IsReadError(err error) bool {
 	return false
 }
 
-// Returns true if error is generated from processing the row of the CSV.
+// IsRowError checks if an error is a rowProcessError.
+// It returns true if the error is of type rowProcessError,
+// otherwise it returns false.
 func IsRowError(err error) bool {
 	if _, ok := err.(rowProcessError); ok {
 		return true
@@ -44,7 +51,8 @@ func IsRowError(err error) bool {
 	return false
 }
 
-// Reads incoming CSV data.
+// Read reads a CSV from the provided reader, processing each row.
+// It skips lines starting with '#'.
 func (T *CSVReader) Read(reader io.Reader) {
 	line := 0
 	scanner := bufio.NewScanner(reader)

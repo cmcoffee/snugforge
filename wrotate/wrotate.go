@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +11,7 @@ import (
 	"sync/atomic"
 )
 
+// rotaFile represents a rotating file writer.
 type rotaFile struct {
 	name         string
 	flag         uint32
@@ -24,6 +24,10 @@ type rotaFile struct {
 	write_lock   sync.Mutex
 }
 
+// to_BUFFER represents the buffer destination.
+// to_FILE represents the file destination.
+// _FAILED represents a failed operation.
+// _CLOSED indicates that the file is closed.
 const (
 	to_BUFFER = iota
 	to_FILE
@@ -31,7 +35,8 @@ const (
 	_CLOSED
 )
 
-// Write function that switches between file output and buffers to memory when files is being rotated.
+// Write writes the provided byte slice to the underlying storage.
+// It handles file rotation and switching between file and buffer.
 func (f *rotaFile) Write(p []byte) (n int, err error) {
 	f.write_lock.Lock()
 	defer f.write_lock.Unlock()
@@ -57,8 +62,8 @@ func (f *rotaFile) Write(p []byte) (n int, err error) {
 	return
 }
 
-// Creates a new log file (or opens an existing one) for writing.
-// max_bytes is threshold for rotation, max_rotation is number of previous logs to hold on to.
+// OpenFile opens or creates a file, optionally rotating it based on size and rotations.
+// It returns a WriteCloser and an error if file opening fails.
 func OpenFile(name string, max_bytes int64, max_rotations uint) (io.WriteCloser, error) {
 	rotator := &rotaFile{
 		name:         name,
@@ -72,7 +77,12 @@ func OpenFile(name string, max_bytes int64, max_rotations uint) (io.WriteCloser,
 
 	rotator.file, err = os.OpenFile(name, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0666)
 	if err != nil {
-		return nil, err
+		rotator.rotator() // Attempt to rotate file if we cannnot open it.
+		if rotator.r_error != nil {
+			return nil, rotator.r_error
+		} else {
+			return rotator, nil
+		}
 	}
 
 	// Just return the open file if max_bytes <= 0 or max_rotations <= 0.
@@ -90,13 +100,12 @@ func OpenFile(name string, max_bytes int64, max_rotations uint) (io.WriteCloser,
 	return rotator, nil
 }
 
-// Closes logging file, removes file from all loggers, removes file from open files.
+// Close closes the underlying file and sets the flag to _CLOSED.
 func (R *rotaFile) Close() (err error) {
 	atomic.StoreUint32(&R.flag, _CLOSED)
 	return R.file.Close()
 }
 
-// Closes file, rotates and removes files greater than max rotations allow, opens new file, dumps buffer to disk and switches write function back to disk.
 func (R *rotaFile) rotator() {
 	fpath, fname := filepath.Split(R.name)
 	if fpath == "" {
@@ -113,12 +122,14 @@ func (R *rotaFile) rotator() {
 		return false
 	}
 
-	err := R.file.Close()
-	if chkErr(err) {
-		return
+	if R.file != nil {
+		err := R.file.Close()
+		if chkErr(err) {
+			return
+		}
 	}
 
-	flist, err := ioutil.ReadDir(fpath)
+	flist, err := os.ReadDir(fpath)
 	if chkErr(err) {
 		return
 	}
@@ -126,8 +137,12 @@ func (R *rotaFile) rotator() {
 	files := make(map[string]os.FileInfo)
 
 	for _, v := range flist {
+		finfo, err := v.Info()
+		if err != nil {
+			return
+		}
 		if strings.Contains(v.Name(), fname) {
-			files[v.Name()] = v
+			files[v.Name()] = finfo
 		}
 	}
 

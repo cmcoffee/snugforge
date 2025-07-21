@@ -9,13 +9,16 @@ import (
 	"time"
 )
 
+// init configures the PleaseWait loading animation.
+// It sets the message and animation frames for a loading indicator.
 func init() {
 	PleaseWait.Set(func() string { return "Please wait ..." }, []string{"[>  ]", "[>> ]", "[>>>]", "[ >>]", "[  >]", "[  <]", "[ <<]", "[<<<]", "[<< ]", "[<  ]"})
 }
 
-// PleaseWait is a wait prompt to display between requests.
+// PleaseWait is a global variable representing the loading indicator.
 var PleaseWait = new(loading)
 
+// loading manages a loading indicator with customizable messages and animations.
 type loading struct {
 	flag    xsync.BitFlag
 	message func() string
@@ -25,28 +28,37 @@ type loading struct {
 	counter int32
 }
 
+// loading_backup holds the state needed to restore a loading animation.
+// It captures the message and animation slices for later use.
 type loading_backup struct {
 	message func() string
 	anim_1  []string
 	anim_2  []string
 }
 
+// loading_show represents the flag for showing loading state.
+// transfer_monitor_active represents the flag for active transfer monitor.
 const (
 	loading_show = 1 << iota
 	transfer_monitor_active
 )
 
+// Restore sets the loading state to the backed-up values.
 func (B *loading_backup) Restore() {
 	PleaseWait.Set(B.message, B.anim_1, B.anim_2)
 }
 
+// Backup returns a copy of the loading state.
 func (L *loading) Backup() *loading_backup {
 	L.mutex.Lock()
 	defer L.mutex.Unlock()
 	return &loading_backup{L.message, L.anim_1, L.anim_2}
 }
 
-// Specify a "Please wait" animated PleaseWait line.
+// Set configures the loading animation with a message and optional loader frames.
+// It takes a function that returns the message to display and variadic slices
+// representing the animation frames for the primary and secondary loaders.
+// If no loader is provided, the animation is not started.
 func (L *loading) Set(message func() string, loader ...[]string) {
 	L.mutex.Lock()
 	defer L.mutex.Unlock()
@@ -83,37 +95,45 @@ func (L *loading) Set(message func() string, loader ...[]string) {
 	}(message, anim_1, anim_2, count)
 }
 
-// Displays loader. "[>>>] Working, Please wait."
+// Show enables the loading indicator.
 func (L *loading) Show() {
 	L.flag.Set(loading_show)
 }
 
-// Hides display loader.
+// Hide stops the loading animation and clears the output.
 func (L *loading) Hide() {
 	L.flag.Unset(loading_show)
 	time.Sleep(time.Millisecond)
 	Flash("")
 }
 
+// ProgressBar interface for tracking progress.
+// Defines methods to add to, set, and mark progress as complete.
 type ProgressBar interface {
 	Add(num int) // Add num to progress bar.
 	Set(num int) // Set num of progress bar.
 	Done()       // Mark progress bar as complete.
 }
 
+// progressBar is a type that implements the ProgressBar interface,
+// providing a progress bar based on a ReadSeekCloser.
 type progressBar struct {
 	tm ReadSeekCloser
 }
 
+// b_closer wraps a *bytes.Reader and implements the ReadSeekCloser interface.
+// It provides a Close() method that does nothing.
 type b_closer struct {
 	*bytes.Reader
 }
 
+// Close closes the b_closer. It always returns nil.
+// //
 func (b b_closer) Close() error {
 	return nil
 }
 
-// Updates loading to be a progress bar.
+// NewProgressBar creates a new progress bar with the given name and maximum value.
 func NewProgressBar(name string, max int) ProgressBar {
 	x := new(progressBar)
 	var dummy b_closer
@@ -123,17 +143,17 @@ func NewProgressBar(name string, max int) ProgressBar {
 	return x
 }
 
-// Adds to progress bar.
+// Add increments the progress bar by the given number of bytes.
 func (p *progressBar) Add(num int) {
 	p.tm.Read(make([]byte, num))
 }
 
-// Specify number set on progress bar.
+// Set repositions the progress bar to the given number.
 func (p *progressBar) Set(num int) {
 	p.tm.Seek(int64(num), 0)
 }
 
-// Complete progress bar, return to loading.
+// Done closes the underlying ReadSeekCloser.
 func (p *progressBar) Done() {
 	p.tm.Close()
 }

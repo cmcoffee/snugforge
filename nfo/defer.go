@@ -10,6 +10,16 @@ import (
 	"syscall"
 )
 
+// Signal Notification Channel. (ie..nfo.Signal<-os.Kill initiates shutdown.)
+// Global defer structure to.WaitGroup.Wait()
+// Error code.
+// WaitGroup.Add
+// Exit channel1.WaitGroup.Done()
+// SignalChan. Range (<-.Await() chan int := <-.A.Wait()
+// Exit()
+// A.Wait()
+// A.Wait()
+// A.Wait ()
 var (
 	// Signal Notification Channel. (ie..nfo.Signal<-os.Kill will initiate a shutdown.)
 	signalChan  = make(chan os.Signal)
@@ -23,7 +33,8 @@ var (
 	exit_lock = make(chan struct{})
 )
 
-// Check if system is currently in shutdown.
+// ShutdownInProgress reports whether a shutdown is in progress.
+// It checks the value of the fatal_triggered atomic integer.
 func ShutdownInProgress() bool {
 	if atomic.LoadInt32(&fatal_triggered) != 0 {
 		return true
@@ -31,18 +42,22 @@ func ShutdownInProgress() bool {
 	return false
 }
 
-// Global wait group, allows running processes to finish up tasks before app shutdown
+// BlockShutdown increments the WaitGroup counter, blocking shutdown
+// until Counter() becomes zero.
 func BlockShutdown() {
 	wait.Add(1)
 }
 
-// Task completed, carry on with shutdown.
+// UnblockShutdown signals the completion of a shutdown process.
+// It decrements a WaitGroup counter, potentially unblocking
+// a waiting shutdown routine.
 func UnblockShutdown() {
 	wait.Done()
 }
 
-// Adds a function to the global defer, function must take no arguments and either return nothing or return an error.
-// Returns function to be called by local keyword defer if you want to run it now and remove it from global defer.
+// Defer registers a function to be called when all deferred
+// functions have returned. It returns a function that, when
+// called, executes the registered function.
 func Defer(closer interface{}) func() error {
 	globalDefer.mutex.Lock()
 	defer globalDefer.mutex.Unlock()
@@ -103,9 +118,7 @@ func Defer(closer interface{}) func() error {
 	}
 }
 
-// Intended to be a defer statement at the begining of main, but can be called at anytime with an exit code.
-// Tries to catch a panic if possible and log it as a fatal error,
-// then proceeds to send a signal to the global defer/shutdown handler
+// Exit terminates the program with the given exit code.
 func Exit(exit_code int) {
 	if r := recover(); r != nil {
 		Fatal("(panic) %s", string(debug.Stack()))
@@ -117,7 +130,8 @@ func Exit(exit_code int) {
 	}
 }
 
-// Sets the signals that we listen for.
+// SetSignals sets the signals to be notified on.
+// It stops any existing signal notifications and registers the provided signals.
 func SetSignals(sig ...os.Signal) {
 	mutex.Lock()
 	defer mutex.Unlock()
@@ -125,15 +139,18 @@ func SetSignals(sig ...os.Signal) {
 	signal.Notify(signalChan, sig...)
 }
 
-// Set a callback function(no arguments) to run after receiving a specific syscall, function returns true to continue shutdown process.
+// SignalCallback registers a callback function to be executed when a
+// specific OS signal is received.
 func SignalCallback(signal os.Signal, callback func() (continue_shutdown bool)) {
 	mutex.Lock()
 	defer mutex.Unlock()
 	callbacks[signal] = callback
 }
 
+// callbacks is a map of OS signals to functions that handle them.
 var callbacks = make(map[os.Signal]func() bool)
 
+// init initializes global resources and sets up signal handling for graceful shutdown.
 func init() {
 	globalDefer.d_map = make(map[string]func() error)
 	SetSignals(syscall.SIGINT, syscall.SIGKILL, syscall.SIGTERM, syscall.SIGHUP)

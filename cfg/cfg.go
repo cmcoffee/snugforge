@@ -30,12 +30,17 @@ import (
 	"sync"
 )
 
+// Store represents a configuration store.
 type Store struct {
 	file     string
 	mutex    sync.RWMutex
 	cfgStore map[string]map[string][]string
 }
 
+// cfg_HEADER is a bit flag for header configuration.
+// cfg_KEY is a bit flag for key configuration.
+// cfg_COMMA is a bit flag for comma configuration.
+// cfg_ESCAPE is a bit flag for escape character configuration.
 const (
 	cfg_HEADER = 1 << iota
 	cfg_KEY
@@ -45,7 +50,9 @@ const (
 
 const empty = ""
 
-// Returns entire line as one string, (Single Get)
+// SGet returns the value associated with the given section and key.
+// Returns an empty string if the section or key does not exist.
+// If multiple values exist, they are joined with a comma and space.
 func (s *Store) SGet(section, key string) string {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
@@ -64,7 +71,8 @@ func (s *Store) SGet(section, key string) string {
 	}
 }
 
-// Returns array of all retrieved string values under section with key.
+// MGet returns a slice of strings associated with the given section and key.
+// Returns an empty slice if the section or key does not exist.
 func (s *Store) MGet(section, key string) []string {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
@@ -83,7 +91,8 @@ func (s *Store) MGet(section, key string) []string {
 	}
 }
 
-// Goes through list of sections and keys to make sure they are set.
+// Sanitize checks if the specified section and keys exist in the configuration.
+// It returns an error if the section doesn't exist or if any of the keys are missing.
 func (s *Store) Sanitize(section string, keys []string) (err error) {
 	if s.cfgStore == nil {
 		return fmt.Errorf("[%s] section does not exist, or is not configured.", section)
@@ -103,7 +112,8 @@ func (s *Store) Sanitize(section string, keys []string) (err error) {
 	return
 }
 
-// Return only the first entry, if there are multiple entries the rest are skipped.
+// Get returns the value associated with the given section and key.
+// Returns an empty string if the section or key does not exist.
 func (s *Store) Get(section, key string) string {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
@@ -130,7 +140,8 @@ func (s *Store) Get(section, key string) string {
 	return result[0]
 }
 
-// Get Boolean Value from config.
+// GetBool returns the boolean value associated with the given section and key.
+// Returns false if the section or key does not exist, or if the value is not "yes" or "true".
 func (s *Store) GetBool(section, key string) (output bool) {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
@@ -157,11 +168,9 @@ func (s *Store) GetBool(section, key string) (output bool) {
 	default:
 		return false
 	}
-
-	return
 }
 
-// Get Int64 Value from config.
+// GetInt returns the integer value from section key provided, (output, bool, err error)
 func (s *Store) GetInt(section, key string) (output int64) {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
@@ -184,7 +193,8 @@ func (s *Store) GetInt(section, key string) (output int64) {
 	return
 }
 
-// Get UInt64 Value from config.
+// GetUint returns the value associated with the given section and key as a uint64.
+// Returns 0 if the section or key does not exist, or if parsing fails.
 func (s *Store) GetUint(section, key string) (output uint64) {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
@@ -207,7 +217,8 @@ func (s *Store) GetUint(section, key string) (output uint64) {
 	return
 }
 
-// Get Float64 Value from config.
+// GetFloat returns the float64 value associated with the given section and key.
+// Returns 0.0 if the section or key does not exist.
 func (s *Store) GetFloat(section, key string) (output float64) {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
@@ -282,7 +293,7 @@ func (s *Store) Exists(input ...string) (found bool) {
 		}
 	}
 	if inlen > 1 {
-		if found == true {
+		if found {
 			_, found = s.cfgStore[input[0]][input[1]]
 			return
 		}
@@ -498,17 +509,19 @@ func (s *Store) config_parser(input io.Reader, overwrite bool) (err error) {
 	return nil
 }
 
-// Sets default settings for configuration store, ignores if already set.
+// Defaults parses the given string as configuration, updating the store.
+// It does not overwrite existing values, only sets those not already present.
 func (s *Store) Defaults(input string) (err error) {
 	return s.config_parser(strings.NewReader(input), false)
 }
 
-// Will parse a string, but overwrite existing config.
+// Parse parses a string as configuration data.
+// It calls the internal config_parser to handle the parsing process.
 func (s *Store) Parse(input string) (err error) {
 	return s.config_parser(strings.NewReader(input), true)
 }
 
-// Reads configuration file and returns Store, file must exist even if empty.
+// File opens the given file, parses it as a configuration, and stores it.
 func (s *Store) File(file string) (err error) {
 	s.file = file
 	f, err := os.Open(file)
@@ -523,16 +536,20 @@ func (s *Store) File(file string) (err error) {
 	return
 }
 
-// TrimSave is similar to Save, however it will trim unusued keys.
+// TrimSave removes unused sections before saving the store.
+// It calls the save method with the trim flag set to true and
+// the provided sections.
 func (s *Store) TrimSave(sections ...string) error {
 	return s.save(true, sections...)
 }
 
-// Saves [section](s) to file, recording all key = value pairs, if empty, save all sections.
+// Save persists the store's data to disk, optionally for specific sections.
 func (s *Store) Save(sections ...string) error {
 	return s.save(false, sections...)
 }
 
+// save writes the configuration to the specified file.
+// It handles file creation, reading, writing, and synchronization.
 func (s *Store) save(clear_unused_keys bool, sections ...string) error {
 
 	if s.file == empty {

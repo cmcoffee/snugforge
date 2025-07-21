@@ -10,5 +10,5 @@
 ```go
 func OpenFile(name string, max_bytes int64, max_rotations uint) (io.WriteCloser, error)
 ```
-Creates a new log file (or opens an existing one) for writing. max_bytes is
-threshold for rotation, max_rotation is number of previous logs to hold on to.
+OpenFile opens or creates a file, optionally rotating it based on size and
+rotations. It returns a WriteCloser and an error if file opening fails.

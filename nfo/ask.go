@@ -1,4 +1,4 @@
-// Simple package to get user input from terminal.
+// nfo package provides logging and output capabilities, including local log files with rotation and simply output to termianl.
 package nfo
 
 import (
@@ -8,22 +8,26 @@ import (
 	"syscall"
 )
 
+// cancel is a channel used to signal cancellation of a process.
 var cancel = make(chan struct{})
 
-// Function to restore terminal on event we get an interuption.
+// getEscape returns a function that, when called, restores the terminal
+// state to what it was before the function was called.
 func getEscape() func() {
 	s, _ := terminal.GetState(int(syscall.Stdin))
 	return func() { terminal.Restore(int(syscall.Stdin), s) }
 }
 
-// Loop until a non-blank answer is given
+// NeedAnswer repeatedly requests an answer from a function until a
+// non-empty string is returned.
 func NeedAnswer(prompt string, request func(prompt string) string) (output string) {
 	for output = request(prompt); output == ""; output = request(prompt) {
 	}
 	return output
 }
 
-// Prompt to press enter.
+// PressEnter prints a prompt and waits for the user to press Enter.
+// It masks the input to prevent it from being displayed on the screen.
 func PressEnter(prompt string) {
 	unesc := Defer(getEscape())
 	defer unesc()
@@ -38,7 +42,8 @@ func PressEnter(prompt string) {
 	fmt.Printf("\r%s\r", string(blank_line))
 }
 
-// Get Hidden/Password input, without returning information to the screen.
+// GetSecret prompts the user for a secret string.
+// It disables terminal echoing while reading input.
 func GetSecret(prompt string) string {
 	unesc := Defer(getEscape())
 	defer unesc()
@@ -50,7 +55,7 @@ func GetSecret(prompt string) string {
 	return output
 }
 
-// Get confirmation
+// GetConfirm prompts the user with a message and returns true if they enter "y" or "yes", and false if they enter "n" or "no".
 func GetConfirm(prompt string) bool {
 	for {
 		resp := GetInput(fmt.Sprintf("%s (y/n): ", prompt))
@@ -64,14 +69,15 @@ func GetConfirm(prompt string) bool {
 	}
 }
 
-// Get confirmation w/ Default answer.
+// Confirms a default answer to a boolean question from the user.
+// Prompts the user for confirmation with a default answer (Y/n or y/N).
 func ConfirmDefault(prompt string, default_answer bool) bool {
 	for {
 		var question string
 		if default_answer {
 			question = fmt.Sprintf("%s (Y/n): ", prompt)
 		} else {
-			question = fmt.Sprintf("%s (y/N): ")
+			question = fmt.Sprintf("%s (y/N): ", prompt)
 		}
 		resp := GetInput(question)
 		resp = strings.ToLower(resp)
@@ -88,7 +94,8 @@ func ConfirmDefault(prompt string, default_answer bool) bool {
 	}
 }
 
-// Removes newline characters
+// cleanInput removes newline and carriage return characters from a string
+// and trims any leading/trailing whitespace.
 func cleanInput(input string) (output string) {
 	var output_bytes []rune
 	for _, v := range input {

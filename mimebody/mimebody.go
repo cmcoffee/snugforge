@@ -7,7 +7,9 @@ import (
 	"net/http"
 )
 
-// Multipart filestreamer
+// streamReadCloser manages reading from an io.ReadCloser with chunking.
+// It buffers the read data and provides a way to limit the size of the read.
+// It also handles multipart form data writing.
 type streamReadCloser struct {
 	chunkSize int64
 	size      int64
@@ -18,7 +20,8 @@ type streamReadCloser struct {
 	mwrite    *multipart.Writer
 }
 
-// If chunkSize is set, dummy close, if not close source io.ReadCloser.
+// Close closes the underlying source. If a chunk size is defined,
+// it does nothing.
 func (s *streamReadCloser) Close() (err error) {
 	if s.chunkSize > 0 {
 		return nil
@@ -27,7 +30,7 @@ func (s *streamReadCloser) Close() (err error) {
 	}
 }
 
-// Reads bytes from source, pushes through mimewriter to bytes.Buffer, and reads from bytes.Buffer.
+// Read reads from the stream.
 func (s *streamReadCloser) Read(p []byte) (n int, err error) {
 
 	// If we have stuff in our output buffer, read from there.
@@ -85,23 +88,22 @@ func (s *streamReadCloser) Read(p []byte) (n int, err error) {
 	return s.w_buff.Read(p)
 }
 
-// Transforms body of request to mime multipart upload.
-// Request body should be io.ReadCloser of file being transfered.
-// fieldname specified field for content, filename should be filename of file.
-// if byte_limit is > 0, original request.Body will need to be closed outside of function.
+// ConvertFormFile converts the request body to multipart/form-data.
+// It allows adding extra fields and limits the byte size.
+// The `fieldname` and `filename` are used for the form field/file.
 func ConvertFormFile(request *http.Request, fieldname string, filename string, add_fields map[string]string, byte_limit int64) {
 	convertBody(request, fieldname, filename, add_fields, byte_limit)
 }
 
-// Transforms body of request to mime multipart upload.
-// Request body should be io.ReadCloser of file being transfered.
-// fieldname specifies field for content.
+// ConvertForm converts the request body to multipart/form-data.
+// It adds the given fields to the form data.
 func ConvertForm(request *http.Request, fieldname string, add_fields map[string]string) {
 	convertBody(request, fieldname, "", add_fields, -1)
 }
 
-// Transforms body of request to mime multipart upload.
-// Request body should be content io.ReadCloser of file being transfered.
+// convertBody converts an HTTP request body to a multipart/form-data body.
+// It adds the given fields and file to the request.
+// byte_limit limits the total size of the request body.
 func convertBody(request *http.Request, fieldname string, filename string, fields map[string]string, byte_limit int64) {
 	if request == nil || request.Body == nil {
 		return

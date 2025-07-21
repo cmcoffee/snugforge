@@ -10,15 +10,14 @@
 ```go
 func ConvertForm(request *http.Request, fieldname string, add_fields map[string]string)
 ```
-Transforms body of request to mime multipart upload. Request body should be
-io.ReadCloser of file being transfered. fieldname specifies field for content.
+ConvertForm converts the request body to multipart/form-data. It adds the given
+fields to the form data.
 
 #### func  ConvertFormFile
 
 ```go
 func ConvertFormFile(request *http.Request, fieldname string, filename string, add_fields map[string]string, byte_limit int64)
 ```
-Transforms body of request to mime multipart upload. Request body should be
-io.ReadCloser of file being transfered. fieldname specified field for content,
-filename should be filename of file. if byte_limit is > 0, original request.Body
-will need to be closed outside of function.
+ConvertFormFile converts the request body to multipart/form-data. It allows
+adding extra fields and limits the byte size. The `fieldname` and `filename` are
+used for the form field/file.

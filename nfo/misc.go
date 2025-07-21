@@ -4,7 +4,7 @@ import (
 	"fmt"
 )
 
-// Provides human readable file sizes.
+// HumanSize returns a human-readable string representation of a size in bytes.
 func HumanSize(bytes int64) string {
 
 	names := []string{

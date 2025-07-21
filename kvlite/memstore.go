@@ -6,28 +6,33 @@ import (
 	"sync"
 )
 
-// Memory-Map keystore
+// memStore is an in-memory store for key-value pairs.
+// It uses a map to store the data and a mutex for concurrency control.
 type memStore struct {
 	mutex   sync.RWMutex
 	kv      map[string]map[string][]byte
 	encoder encoder
 }
 
-// Returns sub of table.
+// Table returns a focused view on a specific table within the store.
+// It allows for key-value operations scoped to that table.
 func (K *memStore) Table(table string) Table {
 	return focused{table: table, store: K}
 }
 
-// Use a toplevel namespace.
+// Bucket returns a new bucket with a different namespace.
 func (K *memStore) Bucket(name string) Store {
 	return K.Sub(name)
 }
 
-// Changes bucket name.
+// Sub creates a new bucket with a different namespace.
 func (K *memStore) Sub(table string) Store {
 	return &substore{fmt.Sprintf("%s%c", table, sepr), K}
 }
 
+// buckets returns a list of unique bucket names.
+// If limit_depth is true, it returns the base names
+// without the full path.
 func (K *memStore) buckets(limit_depth bool) (buckets []string, err error) {
 	K.mutex.RLock()
 	defer K.mutex.RUnlock()
@@ -48,6 +53,8 @@ func (K *memStore) buckets(limit_depth bool) (buckets []string, err error) {
 	return
 }
 
+// Keys returns a list of keys for the given table.
+// It returns an error if the table does not exist.
 func (K *memStore) Keys(table string) (keys []string, err error) {
 	K.mutex.RLock()
 	defer K.mutex.RUnlock()
@@ -59,10 +66,14 @@ func (K *memStore) Keys(table string) (keys []string, err error) {
 	return keys, nil
 }
 
+// Tables returns a list of table names present in the store.
+// It retrieves the buckets and filters for those that do not
+// contain the separator character, indicating they are top-level
+// tables.
 func (K *memStore) Tables() (tables []string, err error) {
-	tmp, e := K.buckets(true)
+	tmp, err := K.buckets(true)
 	if err != nil {
-		return tables, e
+		return tables, err
 	}
 	for _, v := range tmp {
 		if !strings.ContainsRune(v, sepr) {
@@ -72,6 +83,8 @@ func (K *memStore) Tables() (tables []string, err error) {
 	return tables, err
 }
 
+// Drop removes the table and all its associated data from the store.
+// It deletes all keys that have the table name as a prefix.
 func (K *memStore) Drop(table string) (err error) {
 	K.mutex.Lock()
 	defer K.mutex.Unlock()
@@ -84,6 +97,8 @@ func (K *memStore) Drop(table string) (err error) {
 	return nil
 }
 
+// Unset removes the key-value pair from the specified table.
+// It locks the mutex to ensure concurrent access safety.
 func (K *memStore) Unset(table, key string) (err error) {
 	K.mutex.Lock()
 	defer K.mutex.Unlock()
@@ -93,6 +108,8 @@ func (K *memStore) Unset(table, key string) (err error) {
 	return nil
 }
 
+// Get retrieves a value from the store given a table and key.
+// Returns true if the value was found, and an error if any.
 func (K *memStore) Get(table, key string, output interface{}) (found bool, err error) {
 	K.mutex.RLock()
 	defer K.mutex.RUnlock()
@@ -104,7 +121,8 @@ func (K *memStore) Get(table, key string, output interface{}) (found bool, err e
 	return false, nil
 }
 
-// Returns list of keys in table in memory store.
+// CountKeys returns the number of keys in the specified table.
+// It returns an error if the table does not exist.
 func (K *memStore) CountKeys(table string) (count int, err error) {
 	K.mutex.RLock()
 	defer K.mutex.RUnlock()
@@ -114,16 +132,20 @@ func (K *memStore) CountKeys(table string) (count int, err error) {
 	return count, nil
 }
 
-// Set key/value in memory store.
+// Sets the value of a key in a given table.
+// It encrypts the value if encrypt_value is true.
 func (K *memStore) Set(table, key string, value interface{}) (err error) {
 	return K.set(table, key, value, false)
 }
 
-// Encrypt key/value in memory store.
+// CryptSet sets a key-value pair in the specified table, encrypting the value.
+// It returns an error if encoding fails.
 func (K *memStore) CryptSet(table, key string, value interface{}) (err error) {
 	return K.set(table, key, value, true)
 }
 
+// Sets the value for the given key in the specified table.
+// If encrypt_value is true, the value will be encrypted before storing.
 func (K *memStore) set(table, key string, value interface{}, encrypt_value bool) (err error) {
 	K.mutex.Lock()
 	defer K.mutex.Unlock()
@@ -150,7 +172,7 @@ func (K *memStore) set(table, key string, value interface{}, encrypt_value bool)
 
 }
 
-// Closed MemStore
+// Closes the store, deleting all key-value pairs.
 func (K *memStore) Close() (err error) {
 	K.mutex.Lock()
 	defer K.mutex.Unlock()
@@ -160,7 +182,7 @@ func (K *memStore) Close() (err error) {
 	return nil
 }
 
-// Creates a new ephemeral memory based kvliter.Store.
+// MemStore returns a new in-memory store.
 func MemStore() Store {
 	return &memStore{kv: make(map[string]map[string][]byte), encoder: hashBytes(randBytes(256))}
 }

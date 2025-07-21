@@ -4,7 +4,7 @@ import (
 	"io"
 )
 
-// Swap Reader allows for swapping the io.Reader backed []bytes
+// Reader provides a way to read data from either a byte slice or an io.Reader.
 type Reader struct {
 	from_reader    bool
 	reader         io.Reader
@@ -12,20 +12,23 @@ type Reader struct {
 	decoder_copied int
 }
 
-// Set []byte for reader
+// SetBytes sets the underlying byte slice for reading.
+// It disables reading from an io.Reader.
 func (r *Reader) SetBytes(in []byte) {
 	r.from_reader = false
 	r.decoder_bytes = in
 	r.decoder_copied = 0
 }
 
-// Set Reader to Reader
+// SetReader sets the underlying reader for decoding.
+// It indicates that the Reader will receive input from an io.Reader.
 func (r *Reader) SetReader(in io.Reader) {
 	r.from_reader = true
 	r.reader = in
 }
 
-// swap_reader Read function.
+// Read reads bytes from the internal buffer or reader.
+// It returns the number of bytes read and a possible error.
 func (r *Reader) Read(p []byte) (n int, err error) {
 
 	if !r.from_reader {

@@ -84,6 +84,9 @@ var (
 	}
 )
 
+// init initializes the logging configuration based on the environment.
+// It checks if stdout and stderr are connected to terminals and disables
+// timestamps if not.
 func init() {
 	if !terminal.IsTerminal(int(os.Stdout.Fd())) {
 		piped_stdout = true
@@ -94,6 +97,8 @@ func init() {
 	HideTS()
 }
 
+// _logger is a struct for logging messages to different outputs.
+// It holds the prefix, text output, file output, and timestamp flag.
 type _logger struct {
 	prefix  string
 	textout io.Writer
@@ -101,7 +106,9 @@ type _logger struct {
 	use_ts  bool
 }
 
-// Creates folders.
+// mkDir creates the specified directories.
+// It takes a variable number of strings representing paths.
+// Returns an error if directory creation fails.
 func mkDir(name ...string) (err error) {
 	for _, path := range name {
 		subs := strings.Split(path, string(os.PathSeparator))
@@ -126,8 +133,8 @@ func mkDir(name ...string) (err error) {
 	return nil
 }
 
-// Opens a new log file for writing, max_size is threshold for rotation, max_rotation is number of previous logs to hold on to.
-// Set max_size_mb to 0 to disable file rotation.
+// LogFile opens or creates a log file, optionally rotating it.
+// It returns an io.Writer for writing to the log file and an error, if any.
 func LogFile(filename string, max_size_mb uint, max_rotation uint) (io.Writer, error) {
 	max_size := int64(max_size_mb * 1048576)
 	fpath, _ := filepath.Split(filename)
@@ -143,16 +150,21 @@ func LogFile(filename string, max_size_mb uint, max_rotation uint) (io.Writer, e
 	return file, err
 }
 
-// False writer for discarding output.
+// None represents a no-op io.Writer, discarding all writes.
 var None dummyWriter
 
+// dummyWriter is a simple writer that discards all data.
 type dummyWriter struct{}
 
+// Write always returns the length of the slice and a nil error.
 func (dummyWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// Retrieve first matching logger.
+// getLogger returns the logger instance associated with the given flag.
+// It retrieves the logger from a map based on a bitwise AND operation
+// between the flag and predefined constants. Returns nil if no logger
+// is found for the given flag.
 func getLogger(flag uint32) *_logger {
 	mutex.Lock()
 	defer mutex.Unlock()
@@ -164,7 +176,11 @@ func getLogger(flag uint32) *_logger {
 	return nil
 }
 
-// Updates logger.
+// updateLogger updates the logger configuration.
+// It modifies the output writer, timestamp setting, or prefix
+// for the specified logger based on the provided flag, field,
+// and input value, protecting against concurrent access with
+// a mutex lock.
 func updateLogger(flag uint32, field uint32, input interface{}) {
 	mutex.Lock()
 	defer mutex.Unlock()
@@ -202,19 +218,20 @@ func updateLogger(flag uint32, field uint32, input interface{}) {
 	}
 }
 
-// Returns log output for text.
+// GetOutput returns the io.Writer associated with the given flag.
 func GetOutput(flag uint32) io.Writer {
 	t := getLogger(flag)
 	return t.textout
 }
 
-// Returns log file output.
+// GetFile returns the file writer associated with the given flag.
 func GetFile(flag uint32) io.Writer {
 	t := getLogger(flag)
 	return t.fileout
 }
 
-// Enable Timestamp on output.
+// ShowTS enables or disables timestamp logging.
+// If no flag is provided, it defaults to ALL flags.
 func ShowTS(flag ...uint32) {
 	if len(flag) == 0 {
 		flag = append(flag, ALL)
@@ -222,7 +239,10 @@ func ShowTS(flag ...uint32) {
 	updateLogger(flag[0], setTimestamp, true)
 }
 
-// Disable Timestamp on output.
+// HideTS disables timestamp output for all log levels.
+// It accepts optional flags to specify which log levels to disable
+// timestamps for; if no flags are provided, timestamps are disabled
+// for all levels.
 func HideTS(flag ...uint32) {
 	if len(flag) == 0 {
 		flag = append(flag, ALL)
@@ -230,23 +250,29 @@ func HideTS(flag ...uint32) {
 	updateLogger(flag[0], setTimestamp, false)
 }
 
-// Enable a specific logger.
+// SetOutput sets the io.Writer for a specific output flag.
+// It updates the logger to use the provided writer for the flag.
 func SetOutput(flag uint32, w io.Writer) {
 	updateLogger(flag, textWriter, w)
 }
 
+// SetFile sets the file writer for logging.
+// It updates the logger with the provided io.WriteCloser
+// based on the given flag.
 func SetFile(flag uint32, input io.Writer) {
 	updateLogger(flag, fileWriter, input)
 }
 
-// Specify which logs to send to syslog.
+// EnableExport enables specific export flags.
+// It uses a mutex to ensure concurrent safety.
 func EnableExport(flag uint32) {
 	mutex.Lock()
 	defer mutex.Unlock()
 	enabled_exports = enabled_exports | flag
 }
 
-// Specific which logger to not export.
+// DisableExport disables specific exports using a bit flag.
+// It atomically modifies the enabled_exports bitmask.
 func DisableExport(flag uint32) {
 	mutex.Lock()
 	defer mutex.Unlock()
@@ -264,26 +290,25 @@ func SetTZ(location string) (err error) {
 	return
 }
 
-// Switches timestamps to local timezone. (Default Setting)
+// LTZ sets the timezone to local time using a mutex lock.
 func LTZ() {
 	mutex.Lock()
 	defer mutex.Unlock()
 	timezone = time.Local
 }
 
-// Switches logger to use UTC instead of local timezone.
+// / UTC sets the timezone to UTC.
 func UTC() {
 	mutex.Lock()
 	defer mutex.Unlock()
 	timezone = time.UTC
 }
 
-// Generate TS Bytes
 func genTS(in *[]byte) {
 	CT := time.Now().In(timezone)
 
 	year, mon, day := CT.Date()
-	hour, min, sec := CT.Clock()
+	hour, m, sec := CT.Clock()
 
 	ts := in
 
@@ -296,7 +321,7 @@ func genTS(in *[]byte) {
 	*ts = append(*ts, ' ')
 	Itoa(ts, hour, 2)
 	*ts = append(*ts, ':')
-	Itoa(ts, min, 2)
+	Itoa(ts, m, 2)
 	*ts = append(*ts, ':')
 	Itoa(ts, sec, 2)
 	*ts = append(*ts, ' ')
@@ -306,76 +331,73 @@ func genTS(in *[]byte) {
 	*ts = append(*ts, []byte("] ")[0:]...)
 }
 
-// Change prefix for specified logger.
 func SetPrefix(logger uint32, prefix_str string) {
 	updateLogger(logger, setPrefix, prefix_str)
 }
 
-// Don't log, write text to standard error which will be overwritten on the next output.
 func Flash(vars ...interface{}) {
 	if Animations {
 		write2log(_flash_txt|_no_logging, vars...)
 	}
 }
 
-// Don't output, but instead return a string.
 func Stringer(vars ...interface{}) string {
 	var buf bytes.Buffer
 	fprintf(&buf, vars...)
 	return buf.String()
 }
 
-// Don't log, just print text to standard out.
+// Stdout outputs variables to standard output.
 func Stdout(vars ...interface{}) {
 	write2log(_print_txt|_no_logging, vars...)
 }
 
-// Don't log, just print text to standard error.
+// Stderr writes log messages to standard error.
 func Stderr(vars ...interface{}) {
 	write2log(_stderr_txt|_no_logging, vars...)
 }
 
-// Log as Info.
+// Log outputs a log message with default INFO level.
 func Log(vars ...interface{}) {
 	write2log(INFO, vars...)
 }
 
-// Log as Error.
+// Err logs an error message.
 func Err(vars ...interface{}) {
 	write2log(ERROR, vars...)
 }
 
-// Log as Warn.
+// Warn logs a warning message.
 func Warn(vars ...interface{}) {
 	write2log(WARN, vars...)
 }
 
-// Log as Notice.
+// Notice logs a notice message.
 func Notice(vars ...interface{}) {
 	write2log(NOTICE, vars...)
 }
 
-// Log as Info, as auxiliary output.
+// Aux logs an auxiliary message.
 func Aux(vars ...interface{}) {
 	write2log(AUX, vars...)
 }
 
-// Log as Info, as auxiliary output.
+// Aux2 logs an auxiliary message.
 func Aux2(vars ...interface{}) {
 	write2log(AUX2, vars...)
 }
 
-// Log as Info, as auxiliary output.
+// Aux3 is an auxiliary logging function.
 func Aux3(vars ...interface{}) {
 	write2log(AUX3, vars...)
 }
 
-// Log as Info, as auxiliary output.
+// Aux4 logs an auxiliary message.
 func Aux4(vars ...interface{}) {
 	write2log(AUX4, vars...)
 }
 
-// Log as Fatal, then quit.
+// Fatal terminates the program after logging a fatal error.
 func Fatal(vars ...interface{}) {
 	if atomic.CompareAndSwapInt32(&fatal_triggered, 0, 1) {
 		// Defer fatal output, so it is the last log entry displayed.
@@ -390,17 +412,18 @@ func Fatal(vars ...interface{}) {
 	}
 }
 
-// Log as Debug.
+// Debug logs debug-level messages.
 func Debug(vars ...interface{}) {
 	write2log(DEBUG, vars...)
 }
 
-// Log as Trace.
+// Trace logs trace level messages.
 func Trace(vars ...interface{}) {
 	write2log(TRACE, vars...)
 }
 
-// fprintf
+// fprintf formats and writes to an io.Writer.
+// It handles string formatting and byte slices.
 func fprintf(buffer io.Writer, vars ...interface{}) {
 	vlen := len(vars)
 
@@ -429,7 +452,9 @@ func fprintf(buffer io.Writer, vars ...interface{}) {
 	}
 }
 
-// Prepares output text and sends to appropriate logging destinations.
+// write2log writes log messages with configurable flags and output destinations.
+// It handles timestamping, formatting, and output to files, stdout, stderr,
+// and syslog based on the provided flags and logger configuration.
 func write2log(flag uint32, vars ...interface{}) {
 
 	if atomic.LoadInt32(&fatal_triggered) == 1 {

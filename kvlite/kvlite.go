@@ -13,9 +13,22 @@ import (
 	"time"
 )
 
+// ErrLocked indicates that the database is currently in use by another instance.
 var ErrLocked = errors.New("Database is currently in use by an exisiting instance, please close it and try again.")
 
-// Main Store Interface
+// Store provides a list of all tables.
+// Table creats a key/val direct to a specified Table.
+// Sub Creates a new bucket with a different namespace.
+// Bucket Creates a new bucket for shared tenants.
+// Drop drops the specified table.
+// CountKeys provides a total of keys in table.
+// Keys provides a listing of all keys in table.
+// CryptSet encrypts the value within the key/value pair.
+// Set sets the key/value pair in table.
+// Unset deletes the key/value pair in table.
+// Get retrieves value at key in table.
+// Close closes the kvliter.Store.
+// Buckets lists all bucket namespaces.
 type Store interface {
 	// Tables provides a list of all tables.
 	Tables() (tables []string, err error)
@@ -45,7 +58,8 @@ type Store interface {
 	buckets(limit_depth bool) (stores []string, err error)
 }
 
-// Table Interface follows the Main Store Interface, but directly to a table.
+// Table represents an interface for key-value storage.
+// It provides methods for managing keys, values, and the table itself.
 type Table interface {
 	Keys() (keys []string, err error)
 	CountKeys() (count int, err error)
@@ -56,40 +70,48 @@ type Table interface {
 	Drop() (err error)
 }
 
+// focused represents a focused view on a specific table within a store.
 type focused struct {
 	table string
 	store Store
 }
 
+// Get retrieves the value associated with the given key from the table.
+// Returns true if the key was found, false otherwise, and any error encountered.
 func (s focused) Get(key string, value interface{}) (found bool, err error) {
 	return s.store.Get(s.table, key, value)
 }
 
+// Keys returns a listing of all keys in the table.
 func (s focused) Keys() (keys []string, err error) {
 	return s.store.Keys(s.table)
 }
 
+// CountKeys returns the number of keys in the focused table.
 func (s focused) CountKeys() (count int, err error) {
 	return s.store.CountKeys(s.table)
 }
 
+// Set sets the key/value pair in the underlying store's table.
 func (s focused) Set(key string, value interface{}) (err error) {
 	return s.store.Set(s.table, key, value)
 }
 
+// CryptSet encrypts the value associated with the given key.
 func (s focused) CryptSet(key string, value interface{}) (err error) {
 	return s.store.CryptSet(s.table, key, value)
 }
 
+// Unset removes the key/value pair from the table.
 func (s focused) Unset(key string) (err error) {
 	return s.store.Unset(s.table, key)
 }
 
+// Drop removes the table from the store.
 func (s focused) Drop() (err error) {
 	return s.store.Drop(s.table)
 }
 
-// Bolt Backend
 type boltDB struct {
 	db      *bolt.DB
 	encoder encoder
@@ -97,7 +119,8 @@ type boltDB struct {
 
 type encoder []byte
 
-// Get all buckets on system.
+// buckets returns a list of bucket names.
+// limit_depth controls whether to return full bucket paths or just the top-level names.
 func (K *boltDB) buckets(limit_depth bool) (buckets []string, err error) {
 	bmap := make(map[string]struct{})
 
@@ -123,7 +146,6 @@ func (K *boltDB) buckets(limit_depth bool) (buckets []string, err error) {
 	return buckets, err
 }
 
-// Perform sha256.Sum256 against input byte string.
 func hashBytes(input []byte) []byte {
 	sum := sha256.Sum256(input)
 	var output []byte
@@ -179,24 +201,25 @@ func (e encoder) decode(input []byte, output interface{}) (err error) {
 }
 
 // Encodes input to bytes
-func (e *encoder) encode(input interface{}) (output []byte, err error) {
+func (e encoder) encode(input interface{}) (output []byte, err error) {
 	buff := bytes.NewBuffer(nil)
 	x := gob.NewEncoder(buff)
 	err = x.Encode(input)
 	return buff.Bytes(), err
 }
 
-// Creates a bucket with a common namespace.
+// Bucket returns the Store associated with the given bucket name.
 func (K *boltDB) Bucket(name string) Store {
 	return K.Sub(name)
 }
 
-// Created a bucket using a different name space.
+// Sub returns a new substore with the given name.
 func (K *boltDB) Sub(name string) Store {
 	return &substore{fmt.Sprintf("%s%c", name, sepr), K}
 }
 
-// Counts keys in table.
+// CountKeys returns the number of keys in the specified table.
+// Returns 0 if the table does not exist.
 func (K *boltDB) CountKeys(table string) (count int, err error) {
 	err = K.db.View(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte(table))
@@ -209,7 +232,8 @@ func (K *boltDB) CountKeys(table string) (count int, err error) {
 	return
 }
 
-// Lists keys in table.
+// Keys returns a slice of strings representing all keys in the specified table.
+// If the table does not exist, it returns an empty slice and no error.
 func (K *boltDB) Keys(table string) (keys []string, err error) {
 	err = K.db.View(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte(table))
@@ -225,7 +249,8 @@ func (K *boltDB) Keys(table string) (keys []string, err error) {
 	return keys, err
 }
 
-// Delete a key/value.
+// Unset removes the key from the specified table. If the table
+// or key does not exist, this operation does nothing.
 func (K *boltDB) Unset(table, key string) (err error) {
 	return K.db.Update(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte(table))
@@ -239,7 +264,8 @@ func (K *boltDB) Unset(table, key string) (err error) {
 	})
 }
 
-// Drops table
+// Drop removes the specified table and all associated buckets.
+// If the table does not exist, this operation does nothing.
 func (K *boltDB) Drop(table string) (err error) {
 	tmp, e := K.buckets(false)
 	if e != nil {
@@ -265,7 +291,9 @@ func (K *boltDB) Drop(table string) (err error) {
 	return
 }
 
-// Lists all tables
+// Tables returns a list of table names.
+// It retrieves all bucket names from the database that are not
+// part of a sub-table (i.e., do not contain the separator rune).
 func (K *boltDB) Tables() (tables []string, err error) {
 	tmp, e := K.buckets(true)
 	if e != nil {
@@ -279,12 +307,13 @@ func (K *boltDB) Tables() (tables []string, err error) {
 	return tables, err
 }
 
-// Returns sub of table.
+// Table returns a `Table` for the given table name.
 func (K *boltDB) Table(table string) Table {
 	return focused{table: table, store: K}
 }
 
-// Retrieve value from bolt db.
+// Retrieves a value from the database.
+// Returns whether the key was found and any error that occurred.
 func (K *boltDB) Get(table, key string, output interface{}) (found bool, err error) {
 	return found, K.db.View(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte(table))
@@ -303,21 +332,24 @@ func (K *boltDB) Get(table, key string, output interface{}) (found bool, err err
 	})
 }
 
+// Close closes the database connection.
 func (K *boltDB) Close() (err error) {
 	return K.db.Close()
 }
 
-// Stores encrypted key/value pair.
+// CryptSet encrypts and sets a value in the specified table.
 func (K *boltDB) CryptSet(table, key string, value interface{}) (err error) {
 	return K.set(table, key, value, true)
 }
 
-// Stores unencrypted key/value pair.
+// Sets the value for the given key in the specified table.
+// It creates the table if it doesn't exist.
 func (K *boltDB) Set(table, key string, value interface{}) (err error) {
 	return K.set(table, key, value, false)
 }
 
-// Stores key/value pair in bolt.
+// Sets the value for the given key in the specified table, optionally encrypting it.
+// The value is encoded before being stored.
 func (K *boltDB) set(table, key string, value interface{}, encrypt_value bool) (err error) {
 	return K.db.Update(func(tx *bolt.Tx) error {
 		bucket, err := tx.CreateBucketIfNotExists([]byte(table))
@@ -341,7 +373,7 @@ func (K *boltDB) set(table, key string, value interface{}, encrypt_value bool) (
 	})
 }
 
-// Resets encryption key on database, removing all encrypted keys in the process.
+// CryptReset resets the database by deleting all encrypted keys and the KVLite bucket.
 func CryptReset(filename string) (err error) {
 	db, err := open(filename)
 	if err != nil {
@@ -393,7 +425,8 @@ func CryptReset(filename string) (err error) {
 	return db.Close()
 }
 
-// Opens bolt keystore.
+// open opens a boltDB database. It returns the database instance and any error.
+// It handles bolt.ErrTimeout by returning ErrLocked.
 func open(filename string) (DB *boltDB, err error) {
 	db, err := bolt.Open(filename, 0600, &bolt.Options{Timeout: 1 * time.Second})
 	if err != nil {
@@ -405,7 +438,8 @@ func open(filename string) (DB *boltDB, err error) {
 	return &boltDB{db: db}, nil
 }
 
-// Opens BoltDB backed kvlite.Store.
+// Open opens or creates a database file and performs necessary setup.
+// It handles reset, decryption, and sets up the encoder.
 func Open(filename string, padlock ...byte) (Store, error) {
 	db, err := open(filename)
 	if err != nil {

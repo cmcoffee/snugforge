@@ -10,14 +10,16 @@
 ```go
 func IsReadError(err error) bool
 ```
-Returns true if error is generatored from reading the CSV.
+IsReadError reports whether err is a row read error. It checks if the error is
+of type rowReadError.
 
 #### func  IsRowError
 
 ```go
 func IsRowError(err error) bool
 ```
-Returns true if error is generated from processing the row of the CSV.
+IsRowError checks if an error is a rowProcessError. It returns true if the error
+is of type rowProcessError, otherwise it returns false.
 
 #### type CSVReader
 
@@ -28,17 +30,19 @@ type CSVReader struct {
 }
 ```
 
+CSVReader processes CSV data row by row.
 
 #### func  NewReader
 
 ```go
 func NewReader() *CSVReader
 ```
-Allocates a New CSVReader.
+NewReader creates and returns a new CSVReader instance.
 
 #### func (*CSVReader) Read
 
 ```go
 func (T *CSVReader) Read(reader io.Reader)
 ```
-Reads incoming CSV data.
+Read reads a CSV from the provided reader, processing each row. It skips lines
+starting with '#'.

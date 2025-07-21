@@ -6,7 +6,8 @@ import (
 	"os"
 )
 
-// Gets user input, used during setup and configuration.
+// GetInput prompts the user for input and returns the cleaned string.
+// It reads from standard input until a newline character is encountered.
 func GetInput(prompt string) string {
 	reader := bufio.NewReader(os.Stdin)
 

@@ -10,24 +10,30 @@ import (
 	"math/big"
 )
 
+// xSlots defines the number of hash slots.
+// keyLen is the length of the key.
+// slotSize is the size of each slot.
 const (
 	xSlots   = 6
 	keyLen   = 66
 	slotSize = 128
 )
 
+// xLock holds encrypted messages for key exchange and data protection.
+// It stores a slice of byte slices, Msg, representing the encrypted data.
 type xLock struct {
 	Msg [][]byte
 }
 
-// Generates a random integer of 0-max.
+// randInt returns a random integer in the range [0, max).
 func randInt(max int) int {
 	maxBig := *big.NewInt(int64(max))
 	output, _ := rand.Int(rand.Reader, &maxBig)
 	return int(output.Int64())
 }
 
-// Generates a random byte slice of length specified.
+// randBytes returns a slice of random bytes with the specified size.
+// If the size is non-positive, it defaults to 16.
 func randBytes(sz int) []byte {
 	if sz <= 0 {
 		sz = 16
@@ -46,9 +52,10 @@ func randBytes(sz int) []byte {
 
 }
 
-// ErrBadPadlock is returned if kvlite.Open is used with incorrect padlock set on database.
+// ErrBadPadlock indicates an invalid padlock was provided.
 var ErrBadPadlock = errors.New("Invalid padlock provided, unable to open database.")
 
+// Encrypts the input using AES encryption with the provided key.
 func (X *xLock) encrypt(input []byte, key []byte) []byte {
 
 	var (
@@ -66,6 +73,9 @@ func (X *xLock) encrypt(input []byte, key []byte) []byte {
 	return []byte(base64.RawStdEncoding.EncodeToString(buff))
 }
 
+// Decrypts the given input using the provided key.
+// It first decodes the base64 encoded input, then decrypts it
+// using AES in CFB mode with the provided key.
 func (X *xLock) decrypt(input []byte, key []byte) (decoded []byte) {
 
 	var block cipher.Block
@@ -79,7 +89,8 @@ func (X *xLock) decrypt(input []byte, key []byte) (decoded []byte) {
 	return
 }
 
-// Sets and randomizes keys in Store table for Store encryption key.
+// dblocker generates a key and encrypts it with a random passphrase
+// and a provided padlock, storing the encrypted data in the xLock's Msg slice.
 func (X *xLock) dblocker(key, padlock []byte) []byte {
 	passphrase := hashBytes(randBytes(256))
 	if key == nil {
@@ -181,7 +192,8 @@ func (X *xLock) dblocker(key, padlock []byte) []byte {
 	return key[0:32]
 }
 
-// Extracts encryption key from Store table.
+// dbunlocker attempts to unlock the database using a provided padlock.
+// It iterates through encrypted messages to find a valid key.
 func (X *xLock) dbunlocker(padlock []byte) (key []byte, err error) {
 	if X.Msg == nil {
 		key = X.dblocker(nil, padlock)
@@ -258,6 +270,9 @@ func (X *xLock) dbunlocker(padlock []byte) (key []byte, err error) {
 
 }
 
+// unscram extracts bytes from the input slice at specific indices.
+// It iterates through a predefined pattern of indices to extract
+// 44 bytes, returning the extracted slice.
 func unscram(src []byte) (out []byte) {
 	var n int
 	for i := 22; n < 44; i++ {

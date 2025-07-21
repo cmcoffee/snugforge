@@ -11,33 +11,40 @@ import (
 	"time"
 )
 
-// For displaying multiple simultaneous transfers
+// Holds transfer display related data, including a list of monitors, update lock, and display flag.
 var transferDisplay struct {
 	update_lock sync.RWMutex
 	display     int64
 	monitors    []*tmon
 }
 
-// ReadSeekCloser interface
+// ReadSeekCloser is an interface that wraps the basic Read, Seek, and
+// Close methods. It allows reading from and seeking within a data source,
+// and then closing the source when finished.
 type ReadSeekCloser interface {
 	Seek(offset int64, whence int) (int64, error)
 	Read(p []byte) (n int, err error)
 	Close() error
 }
 
+// nopSeeker implements ReadSeekCloser by ignoring all Seek calls.
 type nopSeeker struct {
 	io.ReadCloser
 }
 
+// Seek always returns 0, nil.
 func (T nopSeeker) Seek(offset int64, whence int) (int64, error) {
 	return 0, nil
 }
 
-// Wrap around close and seek functions.
+// NopSeeker returns a ReadSeekCloser that does not perform seeking.
+// It wraps the provided io.ReadCloser and always returns 0, nil from Seek.
 func NopSeeker(input io.ReadCloser) ReadSeekCloser {
 	return &nopSeeker{input}
 }
 
+// termWidth returns the width of the terminal.
+// It returns 0 if the terminal size cannot be determined.
 func termWidth() int {
 	width, _, _ := terminal.GetSize(int(syscall.Stderr))
 	width--
@@ -47,6 +54,17 @@ func termWidth() int {
 	return width
 }
 
+// LeftToRight displays the progress bar from left to right.
+// RightToLeft displays the progress bar from right to left.
+// NoRate prevents the display of the transfer rate.
+// MaxWidth scales the progress bar width to maximum.
+// ProgressBarSummary maintains the progress bar after completion.
+// NoSummary suppresses the summary log after completion.
+// internal is for internal use only.
+// trans_active indicates an active transfer.
+// trans_closed indicates a closed transfer.
+// trans_complete indicates a completed transfer.
+// trans_error indicates a transfer error.
 const (
 	LeftToRight        = 1 << iota // Display progress bar left to right. (Default Behavior)
 	RightToLeft                    // Display progress bar right to left.
@@ -61,18 +79,22 @@ const (
 	trans_error
 )
 
+// readSeekCounter wraps a ReadSeekCloser and counts bytes read.
 type readSeekCounter struct {
 	counter func(int)
 	ReadSeekCloser
 }
 
+// Read reads from the underlying ReadSeekCloser and updates the counter.
 func (r readSeekCounter) Read(p []byte) (n int, err error) {
 	n, err = r.ReadSeekCloser.Read(p)
 	r.counter(n)
 	return
 }
 
-// TransferCounter allows you to add a counter callback function to add bytes added during read.
+// TransferCounter wraps a ReadSeekCloser and counts the number of bytes read.
+// It returns a new ReadSeekCloser that calls the provided counter function
+// after each Read operation with the number of bytes read.
 func TransferCounter(input ReadSeekCloser, counter func(int)) ReadSeekCloser {
 	return readSeekCounter{
 		counter,
@@ -80,8 +102,11 @@ func TransferCounter(input ReadSeekCloser, counter func(int)) ReadSeekCloser {
 	}
 }
 
-// Add Transfer to transferDisplay.
-// Parameters are "name" displayed for file transfer, "limit_sz" for when to pause transfer (aka between calls/chunks), and "total_sz" the total size of the transfer.
+// TransferMonitor creates a transfer monitor and starts displaying
+// transfer progress. It accepts the name of the transfer, the total
+// size, flags, the source, and an optional prefix. It returns a
+// ReadSeekCloser that wraps the original source and allows monitoring
+// of the transfer.
 func TransferMonitor(name string, total_size int64, flag int, source ReadSeekCloser, optional_prefix ...string) ReadSeekCloser {
 	transferDisplay.update_lock.Lock()
 	defer transferDisplay.update_lock.Unlock()
@@ -204,7 +229,8 @@ func TransferMonitor(name string, total_size int64, flag int, source ReadSeekClo
 	return tm
 }
 
-// Wrapper Seeker
+// Seek moves the current position in the underlying source.
+// It returns the new offset and any error that occurred.
 func (tm *tmon) Seek(offset int64, whence int) (int64, error) {
 	o, err := tm.source.Seek(offset, whence)
 	tm.transferred = o
@@ -212,7 +238,8 @@ func (tm *tmon) Seek(offset int64, whence int) (int64, error) {
 	return o, err
 }
 
-// Wrapped Reader
+// Read reads from the underlying source. It updates the transferred
+// count and handles potential errors, closing the transfer if necessary.
 func (tm *tmon) Read(p []byte) (n int, err error) {
 	n, err = tm.source.Read(p)
 	atomic.StoreInt64(&tm.transferred, atomic.LoadInt64(&tm.transferred)+int64(n))
@@ -228,7 +255,7 @@ func (tm *tmon) Read(p []byte) (n int, err error) {
 	return
 }
 
-// Close out speicfic transfer monitor
+// Close closes the underlying source and logs a transfer summary if needed.
 func (tm *tmon) Close() error {
 	tm.flag.Set(trans_closed)
 	if (tm.transferred > 0 || tm.total_size == 0) && !tm.flag.Has(NoSummary) {
@@ -237,6 +264,8 @@ func (tm *tmon) Close() error {
 	return tm.source.Close()
 }
 
+// spacePrint prints the input string padded with spaces.
+// It pads the string with spaces to the minimum length.
 func spacePrint(min int, input string) string {
 	output := make([]rune, min)
 	for i := 0; i < len(output); i++ {
@@ -245,7 +274,9 @@ func spacePrint(min int, input string) string {
 	return string(append(output[len(input)-1:], []rune(input)[0:]...))
 }
 
-// Transfer Monitor
+// tmon represents a transfer monitor.
+// It tracks the progress of a transfer and provides information
+// such as transferred bytes, total size, and transfer rate.
 type tmon struct {
 	flag        BitFlag
 	prefix      string
@@ -260,7 +291,10 @@ type tmon struct {
 	source      ReadSeekCloser
 }
 
-// Outputs progress of TMonitor.
+// showTransfer returns a string representation of the transfer progress.
+// It displays either a progress bar or transfer rate and size.
+// The 'summary' parameter controls whether the full name or short name
+// is used in the output.
 func (t *tmon) showTransfer(summary bool) string {
 	transferred := atomic.LoadInt64(&t.transferred)
 	rate := t.showRate()
@@ -282,7 +316,11 @@ func (t *tmon) showTransfer(summary bool) string {
 	}
 }
 
-// Provides average rate of transfer.
+// showRate returns the current transfer rate as a string.
+// It calculates the rate based on transferred bytes and elapsed time.
+// Returns the formatted rate string (e.g., "1.2mbps") or "0.0bps" if no
+// data has been transferred or transfer is not active. It also updates
+// the internal rate and flags transfer completion if appropriate.
 func (t *tmon) showRate() (rate string) {
 
 	transferred := atomic.LoadInt64(&t.transferred)
@@ -330,7 +368,7 @@ func (t *tmon) showRate() (rate string) {
 	return t.rate
 }
 
-// Produces progress bar for information on update.
+// progressBar formats and returns a progress bar string.
 func (t *tmon) progressBar(name string) string {
 	num := int((float64(atomic.LoadInt64(&t.transferred)) / float64(t.total_size)) * 100)
 

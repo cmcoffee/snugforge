@@ -11,7 +11,7 @@ import (
 	"syscall"
 )
 
-// Gets user input, used during setup and configuration.
+// GetInput prompts the user for input and returns the entered string.
 func GetInput(prompt string) string {
 	unesc := Defer(getEscape())
 	defer unesc()

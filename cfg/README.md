@@ -29,13 +29,15 @@ type Store struct {
 }
 ```
 
+Store represents a configuration store.
 
 #### func (*Store) Defaults
 
 ```go
 func (s *Store) Defaults(input string) (err error)
 ```
-Sets default settings for configuration store, ignores if already set.
+Defaults parses the given string as configuration, updating the store. It does
+not overwrite existing values, only sets those not already present.
 
 #### func (*Store) Exists
 
@@ -49,42 +51,48 @@ Returns true if section or section and key exists.
 ```go
 func (s *Store) File(file string) (err error)
 ```
-Reads configuration file and returns Store, file must exist even if empty.
+File opens the given file, parses it as a configuration, and stores it.
 
 #### func (*Store) Get
 
 ```go
 func (s *Store) Get(section, key string) string
 ```
-Return only the first entry, if there are multiple entries the rest are skipped.
+Get returns the value associated with the given section and key. Returns an
+empty string if the section or key does not exist.
 
 #### func (*Store) GetBool
 
 ```go
 func (s *Store) GetBool(section, key string) (output bool)
 ```
-Get Boolean Value from config.
+GetBool returns the boolean value associated with the given section and key.
+Returns false if the section or key does not exist, or if the value is not "yes"
+or "true".
 
 #### func (*Store) GetFloat
 
 ```go
 func (s *Store) GetFloat(section, key string) (output float64)
 ```
-Get Float64 Value from config.
+GetFloat returns the float64 value associated with the given section and key.
+Returns 0.0 if the section or key does not exist.
 
 #### func (*Store) GetInt
 
 ```go
 func (s *Store) GetInt(section, key string) (output int64)
 ```
-Get Int64 Value from config.
+GetInt returns the integer value from section key provided, (output, bool, err
+error)
 
 #### func (*Store) GetUint
 
 ```go
 func (s *Store) GetUint(section, key string) (output uint64)
 ```
-Get UInt64 Value from config.
+GetUint returns the value associated with the given section and key as a uint64.
+Returns 0 if the section or key does not exist, or if parsing fails.
 
 #### func (*Store) Keys
 
@@ -98,36 +106,40 @@ Returns keys of section specified.
 ```go
 func (s *Store) MGet(section, key string) []string
 ```
-Returns array of all retrieved string values under section with key.
+MGet returns a slice of strings associated with the given section and key.
+Returns an empty slice if the section or key does not exist.
 
 #### func (*Store) Parse
 
 ```go
 func (s *Store) Parse(input string) (err error)
 ```
-Will parse a string, but overwrite existing config.
+Parse parses a string as configuration data. It calls the internal config_parser
+to handle the parsing process.
 
 #### func (*Store) SGet
 
 ```go
 func (s *Store) SGet(section, key string) string
 ```
-Returns entire line as one string, (Single Get)
+SGet returns the value associated with the given section and key. Returns an
+empty string if the section or key does not exist. If multiple values exist,
+they are joined with a comma and space.
 
 #### func (*Store) Sanitize
 
 ```go
 func (s *Store) Sanitize(section string, keys []string) (err error)
 ```
-Goes through list of sections and keys to make sure they are set.
+Sanitize checks if the specified section and keys exist in the configuration. It
+returns an error if the section doesn't exist or if any of the keys are missing.
 
 #### func (*Store) Save
 
 ```go
 func (s *Store) Save(sections ...string) error
 ```
-Saves [section](s) to file, recording all key = value pairs, if empty, save all
-sections.
+Save persists the store's data to disk, optionally for specific sections.
 
 #### func (*Store) Sections
 
@@ -148,7 +160,8 @@ Sets key = values under [section], updates Store and saves to file.
 ```go
 func (s *Store) TrimSave(sections ...string) error
 ```
-TrimSave is similar to Save, however it will trim unusued keys.
+TrimSave removes unused sections before saving the store. It calls the save
+method with the trim flag set to true and the provided sections.
 
 #### func (*Store) Unset
 

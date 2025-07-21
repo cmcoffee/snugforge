@@ -10,6 +10,7 @@ import (
 	"text/tabwriter"
 )
 
+// Options represents a menu of configurable options.
 type Options struct {
 	header    string
 	footer    string
@@ -18,14 +19,15 @@ type Options struct {
 	config    []Value
 }
 
-// Options Value
+// Value defines an interface for configurable options.
+// It allows setting, getting, and string representation of a value.
 type Value interface {
 	Set() bool
 	Get() interface{}
 	String() string
 }
 
-// Creates new Options Menu
+// NewOptions creates a new Options instance with the given header, footer, and exit character.
 func NewOptions(header, footer string, exit_char rune) *Options {
 	return &Options{
 		header:    header,
@@ -36,12 +38,13 @@ func NewOptions(header, footer string, exit_char rune) *Options {
 	}
 }
 
-// Registers an Value with Options Menu
+// Register adds a configurable option to the options menu.
 func (T *Options) Register(input Value) {
 	T.config = append(T.config, input)
 }
 
-// Show Options Menu, if separate_last = true, the last menu item will be dropped one line, and it's select number will be 0, seperating it from the rest.
+// Select displays a menu of configurable options and allows the user to make a selection.
+// It returns true if a change was made, false otherwise.
 func (T *Options) Select(separate_last bool) (changed bool) {
 	var text_buffer bytes.Buffer
 	txt := tabwriter.NewWriter(&text_buffer, 1, 8, 1, ' ', 0)
@@ -107,7 +110,8 @@ func (T *Options) Select(separate_last bool) (changed bool) {
 	}
 }
 
-// Presents string, uses astricks if private.
+// showVar returns a string, masking it with '*' if 'mask' is true.
+// If the input string is empty, it returns a default message.
 func showVar(input string, mask bool) string {
 	hide_value := func(input string) string {
 		var str []rune
@@ -128,7 +132,10 @@ func showVar(input string, mask bool) string {
 	}
 }
 
-// String defines an string menu option displaying with specified desc in menu, default value, and help string. The return value is the address of an string variable that stores the value of the option.
+// String defines a string menu option displaying with specified
+// desc in menu, default value, and help string. The return value
+// is the address of an string variable that stores the value of
+// the option.
 func (O *Options) String(desc string, value string, help string, mask_value bool) *string {
 	new_var := &stringValue{
 		desc:  desc,
@@ -140,7 +147,8 @@ func (O *Options) String(desc string, value string, help string, mask_value bool
 	return &value
 }
 
-// Secret defines an string menu option displaying with specified desc in menu, default value, and help string. The return value is the address of an string variable that stores the value of the option.
+// Secret registers a string option with masked display.
+// It returns a pointer to the string variable holding the value.
 func (O *Options) Secret(desc string, value string, help string) *string {
 	new_var := &stringValue{
 		desc:  desc,
@@ -152,7 +160,8 @@ func (O *Options) Secret(desc string, value string, help string) *string {
 	return &value
 }
 
-// SecretVar defines a string with specified name, value is displayed as masked, default value and usage string. The argument p points to a string variable in which to store the value of the flag.
+// SecretVar registers a string option with masked display.
+// It returns a pointer to the string variable holding the value.
 func (O *Options) SecretVar(p *string, desc string, value string, help string) {
 	*p = value
 	O.Register(&stringValue{
@@ -164,7 +173,8 @@ func (O *Options) SecretVar(p *string, desc string, value string, help string) {
 	return
 }
 
-// StringVar defines a string flag with specified name, default value, and usage string. The argument p points to a string variable in which to store the value of the flag.
+// StringVar sets a string option with the given description, default value, and help string.
+// It registers the option with the Options menu.
 func (O *Options) StringVar(p *string, desc string, value string, help string) {
 	*p = value
 	O.Register(&stringValue{
@@ -176,7 +186,8 @@ func (O *Options) StringVar(p *string, desc string, value string, help string) {
 	return
 }
 
-// Bool defines an int menu option displaying with specified desc in menu, default value, and help string. The return value is the address of an bool variable that stores the value of the option.
+// Bool registers a boolean option with the given description and default value.
+// It returns a pointer to the boolean variable holding the value.
 func (O *Options) Bool(desc string, value bool) *bool {
 	new_var := &boolValue{
 		desc:  desc,
@@ -186,7 +197,8 @@ func (O *Options) Bool(desc string, value bool) *bool {
 	return &value
 }
 
-// BoolVar defines a bool menu option displaying with specified desc in menu, default value, and help string. The argument p points to a bool variable in which to store the value of the option.
+// BoolVar sets a boolean option with the given description and default value.
+// It registers the option with the Options menu.
 func (O *Options) BoolVar(p *bool, desc string, value bool) {
 	*p = value
 	O.Register(&boolValue{
@@ -195,7 +207,8 @@ func (O *Options) BoolVar(p *bool, desc string, value bool) {
 	})
 }
 
-// Int defines an int menu option displaying with specified desc in menu, default value, and help string. The return value is the address of an int variable that stores the value of the option.
+// Int registers an integer option with the given description, default value, help string, and range.
+// It returns a pointer to the integer variable holding the value.
 func (O *Options) Int(desc string, value int, help string, min, max int) *int {
 	new_var := &intValue{
 		desc:  desc,
@@ -208,6 +221,8 @@ func (O *Options) Int(desc string, value int, help string, min, max int) *int {
 	return &value
 }
 
+// IntVar sets an integer option with the given description, default value, help string, and range.
+// It registers the option with the Options menu.
 func (O *Options) IntVar(p *int, desc string, value int, help string, min, max int) {
 	*p = value
 	O.Register(&intValue{
@@ -219,7 +234,8 @@ func (O *Options) IntVar(p *int, desc string, value int, help string, min, max i
 	})
 }
 
-// Option defines an nested Options menu option displaying with specified desc in menu, separate_last will separate the last menu option within the sub Options when selected.
+// Options registers a nested Options menu as an option.
+// It allows for hierarchical configuration.
 func (O *Options) Options(desc string, value *Options, separate_last bool) {
 	O.Register(&optionsValue{
 		desc:          desc,
@@ -228,7 +244,7 @@ func (O *Options) Options(desc string, value *Options, separate_last bool) {
 	})
 }
 
-// Func defined a function within the option menu, the function should return a bool variable telling the Options menu if a change has occurred.
+// Registers a function as an option that, when selected, executes the function and returns a boolean.
 func (O *Options) Func(desc string, value func() bool) {
 	O.Register(&funcValue{
 		desc:  desc,
@@ -236,7 +252,10 @@ func (O *Options) Func(desc string, value func() bool) {
 	})
 }
 
-// String value
+// StringValue represents a string-based configuration option.
+// It stores the description, a pointer to the string value,
+// help text, and a flag indicating whether the value should
+// be masked (e.g., for passwords).
 type stringValue struct {
 	desc  string
 	value *string
@@ -244,6 +263,8 @@ type stringValue struct {
 	mask  bool
 }
 
+// Set prompts the user for input and sets the string value.
+// Returns true if input was provided, false otherwise.
 func (S *stringValue) Set() bool {
 	var input string
 	if len(S.help) > 0 {
@@ -258,33 +279,41 @@ func (S *stringValue) Set() bool {
 	return false
 }
 
+// String returns a string representation of the string value,
+// including the description and the masked or unmasked value.
 func (S *stringValue) String() string {
 	return fmt.Sprintf("%s: \t%s", S.desc, showVar(*S.value, S.mask))
 }
 
+// Get returns the current string value.
 func (S *stringValue) Get() interface{} {
 	return S.value
 }
 
-// Boolean Value.
+// boolValue represents a boolean option with its description and value.
 type boolValue struct {
 	desc  string
 	value *bool
 }
 
+// IsSet returns whether the value has been set.
 func (B *boolValue) IsSet() bool {
 	return true
 }
 
+// Set toggles the boolean value stored within the boolValue.
+// It returns true if the toggle was successful, otherwise false.
 func (B *boolValue) Set() bool {
 	*B.value = *B.value == false
 	return true
 }
 
+// Get returns the underlying bool value.
 func (B *boolValue) Get() interface{} {
 	return B.value
 }
 
+// String returns a string representation of the boolean value.
 func (B *boolValue) String() string {
 	var value_str string
 	if *B.value {
@@ -295,6 +324,7 @@ func (B *boolValue) String() string {
 	return fmt.Sprintf("%s:\t%s", B.desc, value_str)
 }
 
+// intValue represents an integer option with description, help, value, min, max, and changed flag.
 type intValue struct {
 	desc    string
 	help    string
@@ -304,7 +334,6 @@ type intValue struct {
 	changed int
 }
 
-// Integer Value
 func (I *intValue) Set() bool {
 	for {
 		var input string
@@ -330,52 +359,64 @@ func (I *intValue) Set() bool {
 	}
 }
 
+// Get returns the current integer value.
 func (I *intValue) Get() interface{} {
 	return I.value
 }
 
-func (I intValue) IsSet() bool {
+// IsSet always returns true.
+func (I *intValue) IsSet() bool {
 	return true
 }
 
+// String returns a string representation of the intValue.
 func (I *intValue) String() string {
 	return fmt.Sprintf("%s:\t%d", I.desc, *I.value)
 }
 
-// Nested Options.
+// optionsValue represents a single option with its description,
+// separation flag, and associated Options object.
 type optionsValue struct {
 	desc          string
 	separate_last bool
 	value         *Options
 }
 
+// Set displays the options menu and allows the user to make a selection.
+// It returns true if a change was made, false otherwise.
 func (O *optionsValue) Set() bool {
 	Stdout("\n")
 	return O.value.Select(O.separate_last)
 }
 
+// Get returns the value of the option.
 func (O *optionsValue) Get() interface{} {
 	return nil
 }
 
+// String returns the description of the option value.
 func (O *optionsValue) String() string {
 	return O.desc
 }
 
-// Function as an option, should take no arguments and return a bool value.
+// funcValue represents a function with a description.
+// It stores a boolean function and a string describing it.
 type funcValue struct {
 	desc  string
 	value func() bool
 }
 
+// String returns the description of the function.
 func (f *funcValue) String() string {
 	return f.desc
 }
 
+// Get returns the value.
 func (f *funcValue) Get() interface{} {
 	return nil
 }
 
+// Set executes the stored function and returns a boolean value.
 func (f *funcValue) Set() bool {
 	Stdout("\n")
 	return f.value()
