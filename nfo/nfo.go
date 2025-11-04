@@ -6,8 +6,6 @@ package nfo
 import (
 	"bytes"
 	"fmt"
-	"github.com/cmcoffee/snugforge/wrotate"
-	"golang.org/x/crypto/ssh/terminal"
 	"io"
 	"os"
 	"path/filepath"
@@ -16,6 +14,9 @@ import (
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
+
+	"github.com/cmcoffee/snugforge/wrotate"
+	"golang.org/x/term"
 )
 
 const (
@@ -88,10 +89,10 @@ var (
 // It checks if stdout and stderr are connected to terminals and disables
 // timestamps if not.
 func init() {
-	if !terminal.IsTerminal(int(os.Stdout.Fd())) {
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		piped_stdout = true
 	}
-	if !terminal.IsTerminal(int(os.Stderr.Fd())) {
+	if !term.IsTerminal(int(os.Stderr.Fd())) {
 		piped_stderr = true
 	}
 	HideTS()

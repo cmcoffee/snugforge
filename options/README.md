@@ -1,4 +1,4 @@
-# options
+# options : Deprecated, use nfo.options.
 --
     import "github.com/cmcoffee/snugforge/options"
 

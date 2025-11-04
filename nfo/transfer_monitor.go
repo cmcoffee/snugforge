@@ -2,13 +2,14 @@ package nfo
 
 import (
 	"fmt"
-	. "github.com/cmcoffee/snugforge/xsync"
-	"golang.org/x/crypto/ssh/terminal"
 	"io"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	. "github.com/cmcoffee/snugforge/xsync"
+	"golang.org/x/term"
 )
 
 // Holds transfer display related data, including a list of monitors, update lock, and display flag.
@@ -46,7 +47,7 @@ func NopSeeker(input io.ReadCloser) ReadSeekCloser {
 // termWidth returns the width of the terminal.
 // It returns 0 if the terminal size cannot be determined.
 func termWidth() int {
-	width, _, _ := terminal.GetSize(int(syscall.Stderr))
+	width, _, _ := term.GetSize(int(syscall.Stderr))
 	width--
 	if width < 1 {
 		width = 0

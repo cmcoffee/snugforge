@@ -13,11 +13,26 @@ build/*
 *.pbxuser
 *.xcworkspace
 xcuserdata
+tasks/classified/*
+classified.go
+
+#vscode/jetbrains
+.idea
+.vscode
+.roo
+*.code-workspace
 
 # svn & cvs
+add_repo.sh
+update_docs.sh
+update.sh
+custom_tasks.go
+tasks/custom
 .svn
 CVS
 
-#additional
-update_docs.sh
+# AI Agents
+AGENTS.md
+
 add_repo.sh
+update_docs.sh

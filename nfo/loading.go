@@ -1,12 +1,12 @@
 package nfo
 
 import (
-	//"fmt"
 	"bytes"
-	"github.com/cmcoffee/snugforge/xsync"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/cmcoffee/snugforge/xsync"
 )
 
 // init configures the PleaseWait loading animation.

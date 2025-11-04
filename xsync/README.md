@@ -29,6 +29,13 @@ func (B *BitFlag) Set(flag uint64) bool
 ```
 Set BitFlag
 
+#### func (*BitFlag) Switch
+
+```go
+func (B *BitFlag) Switch(flags ...uint64) uint64
+```
+Perform lookup of multiple flags, return index of first match or 0 if none
+
 #### func (*BitFlag) Unset
 
 ```go

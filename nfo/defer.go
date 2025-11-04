@@ -10,26 +10,27 @@ import (
 	"syscall"
 )
 
-// Signal Notification Channel. (ie..nfo.Signal<-os.Kill initiates shutdown.)
-// Global defer structure to.WaitGroup.Wait()
-// Error code.
-// WaitGroup.Add
-// Exit channel1.WaitGroup.Done()
-// SignalChan. Range (<-.Await() chan int := <-.A.Wait()
-// Exit()
-// A.Wait()
-// A.Wait()
-// A.Wait ()
 var (
-	// Signal Notification Channel. (ie..nfo.Signal<-os.Kill will initiate a shutdown.)
-	signalChan  = make(chan os.Signal)
+	// SignalChan is a channel used to receive OS signals for graceful shutdown.
+	// It allows the application to respond to signals like SIGINT, SIGTERM, and SIGKILL.
+	signalChan = make(chan os.Signal)
+
+	// globalDefer holds the deferred functions to be executed during shutdown.
+	// It uses a mutex to protect concurrent access to the deferred functions list.
 	globalDefer struct {
 		mutex sync.RWMutex
 		ids   []string
 		d_map map[string]func() error
 	}
-	errCode   = 0
-	wait      sync.WaitGroup
+
+	// errCode stores the exit code for the application.
+	// It is updated based on the signal received or other error conditions.
+	errCode = 0
+
+	// wait is a WaitGroup used to wait for all deferred functions to complete before exiting.
+	wait sync.WaitGroup
+
+	// exit_lock is a channel used to signal the shutdown goroutine to exit after all deferred functions have completed.
 	exit_lock = make(chan struct{})
 )
 
@@ -55,9 +56,9 @@ func UnblockShutdown() {
 	wait.Done()
 }
 
-// Defer registers a function to be called when all deferred
-// functions have returned. It returns a function that, when
-// called, executes the registered function.
+// Defer registers a function to be called when all deferred functions have returned.
+// It accepts a closer interface which can be either a func() or func() error.
+// The function returns a cleanup function that, when called, removes the registered function from the defer list and executes it.
 func Defer(closer interface{}) func() error {
 	globalDefer.mutex.Lock()
 	defer globalDefer.mutex.Unlock()

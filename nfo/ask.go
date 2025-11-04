@@ -3,9 +3,10 @@ package nfo
 
 import (
 	"fmt"
-	"golang.org/x/crypto/ssh/terminal"
 	"strings"
 	"syscall"
+
+	"golang.org/x/term"
 )
 
 // cancel is a channel used to signal cancellation of a process.
@@ -14,8 +15,8 @@ var cancel = make(chan struct{})
 // getEscape returns a function that, when called, restores the terminal
 // state to what it was before the function was called.
 func getEscape() func() {
-	s, _ := terminal.GetState(int(syscall.Stdin))
-	return func() { terminal.Restore(int(syscall.Stdin), s) }
+	s, _ := term.GetState(int(syscall.Stdin))
+	return func() { term.Restore(int(syscall.Stdin), s) }
 }
 
 // NeedAnswer repeatedly requests an answer from a function until a
@@ -38,7 +39,7 @@ func PressEnter(prompt string) {
 	for range prompt {
 		blank_line = append(blank_line, ' ')
 	}
-	terminal.ReadPassword(int(syscall.Stdin))
+	term.ReadPassword(int(syscall.Stdin))
 	fmt.Printf("\r%s\r", string(blank_line))
 }
 
@@ -49,7 +50,7 @@ func GetSecret(prompt string) string {
 	defer unesc()
 
 	fmt.Printf(prompt)
-	resp, _ := terminal.ReadPassword(int(syscall.Stdin))
+	resp, _ := term.ReadPassword(int(syscall.Stdin))
 	output := cleanInput(string(resp))
 	fmt.Printf("\n")
 	return output
