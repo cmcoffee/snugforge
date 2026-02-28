@@ -22,6 +22,7 @@ Requires **Go 1.24+**
 | [csvp](#csvp) | `snugforge/csvp` | Callback-based CSV row processor |
 | [mimebody](#mimebody) | `snugforge/mimebody` | MIME multipart/form-data encoder for HTTP requests |
 | [swapreader](#swapreader) | `snugforge/swapreader` | io.Reader that switches between a byte slice and a reader |
+| [jwcrypt](#jwcrypt) | `snugforge/jwcrypt` | JWK key parsing, RSA private key loading, and JWT RS256 signing |
 
 ---
 
@@ -529,6 +530,58 @@ n, _ := r.Read(buf)  // buf = "hello", n = 5
 r.SetReader(os.Stdin)
 n, _ = r.Read(buf)    // reads from stdin
 ```
+
+---
+
+### jwcrypt
+
+JWK key parsing (RFC 7517), RSA private key loading, and JWT RS256 signing (RFC 7515/7519).
+
+```go
+import "github.com/cmcoffee/snugforge/jwcrypt"
+```
+
+**Parse a JWK**
+
+```go
+jwk, err := jwcrypt.ParseJWK(jsonData)
+// Access standard JWK attributes
+fmt.Println(jwk.KeyID)      // "kid" field
+fmt.Println(jwk.Algorithm)  // "alg" field
+fmt.Println(jwk.Use)        // "use" field (sig, enc)
+fmt.Println(jwk.KeyType)    // "kty" field
+
+// Use the extracted RSA private key
+key := jwk.PrivateKey
+```
+
+**Parse an RSA Private Key (auto-detect format)**
+
+```go
+// Auto-detects JWK vs PEM/PKCS8 format
+key, err := jwcrypt.ParseRSAPrivateKey(keyData)
+
+// With passphrase for encrypted PKCS8
+key, err := jwcrypt.ParseRSAPrivateKey(keyData, []byte("secret"))
+```
+
+**Sign a JWT with RS256**
+
+```go
+claims := map[string]interface{}{
+    "iss": "my-app",
+    "sub": "user@example.com",
+    "exp": time.Now().Add(5 * time.Minute).Unix(),
+}
+
+// Basic RS256 token
+token, err := jwcrypt.SignRS256(key, claims)
+
+// With custom header fields
+token, err := jwcrypt.SignRS256(key, claims, map[string]string{"kid": "key-id-123"})
+```
+
+Claims can be `map[string]interface{}` or any struct that marshals to JSON.
 
 ---
 
