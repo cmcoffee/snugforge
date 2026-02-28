@@ -25,7 +25,7 @@ Check if flag is set
 #### func (*BitFlag) Set
 
 ```go
-func (B *BitFlag) Set(flag uint64) bool
+func (B *BitFlag) Set(flag uint64)
 ```
 Set BitFlag
 
@@ -39,7 +39,7 @@ Perform lookup of multiple flags, return index of first match or 0 if none
 #### func (*BitFlag) Unset
 
 ```go
-func (B *BitFlag) Unset(flag uint64) bool
+func (B *BitFlag) Unset(flag uint64)
 ```
 Unset BitFlag
 

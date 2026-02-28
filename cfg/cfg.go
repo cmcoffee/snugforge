@@ -94,20 +94,24 @@ func (s *Store) MGet(section, key string) []string {
 // Sanitize checks if the specified section and keys exist in the configuration.
 // It returns an error if the section doesn't exist or if any of the keys are missing.
 func (s *Store) Sanitize(section string, keys []string) (err error) {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+
 	if s.cfgStore == nil {
-		return fmt.Errorf("[%s] section does not exist, or is not configured.", section)
+		return fmt.Errorf("[%s] section does not exist, or is not configured", section)
 	}
-	if _, ok := s.cfgStore[section]; !ok {
-		return fmt.Errorf("[%s] section does not exist, or is not configured.", section)
+	sectionMap, ok := s.cfgStore[section]
+	if !ok {
+		return fmt.Errorf("[%s] section does not exist, or is not configured", section)
 	}
 	var missing_keys []string
 	for _, key := range keys {
-		if found := s.Exists(section, key); !found {
+		if _, found := sectionMap[key]; !found {
 			missing_keys = append(missing_keys, fmt.Sprintf("'%s'", key))
 		}
 	}
 	if len(missing_keys) > 0 {
-		return fmt.Errorf("[%s] section lacks required keys: %s.", section, strings.Join(missing_keys, ", "))
+		return fmt.Errorf("[%s] section lacks required keys: %s", section, strings.Join(missing_keys, ", "))
 	}
 	return
 }
@@ -159,6 +163,10 @@ func (s *Store) GetBool(section, key string) (output bool) {
 		return false
 	}
 
+	if len(result) == 0 {
+		return false
+	}
+
 	result_str := strings.ToLower(result[0])
 	switch result_str {
 	case "yes":
@@ -188,6 +196,10 @@ func (s *Store) GetInt(section, key string) (output int64) {
 		return 0
 	}
 
+	if len(result) == 0 {
+		return 0
+	}
+
 	output, _ = strconv.ParseInt(result[0], 10, 64)
 
 	return
@@ -209,6 +221,10 @@ func (s *Store) GetUint(section, key string) (output uint64) {
 	)
 
 	if result, found = s.cfgStore[section][key]; !found {
+		return 0
+	}
+
+	if len(result) == 0 {
 		return 0
 	}
 
@@ -236,6 +252,10 @@ func (s *Store) GetFloat(section, key string) (output float64) {
 		return 0.0
 	}
 
+	if len(result) == 0 {
+		return 0.0
+	}
+
 	output, _ = strconv.ParseFloat(result[0], 64)
 
 	return
@@ -247,7 +267,7 @@ func (s *Store) Sections() (out []string) {
 	defer s.mutex.RUnlock()
 
 	if s.cfgStore == nil {
-		return []string{empty}
+		return nil
 	}
 
 	for section := range s.cfgStore {
@@ -263,7 +283,7 @@ func (s *Store) Keys(section string) (out []string) {
 	defer s.mutex.RUnlock()
 
 	if v, ok := s.cfgStore[section]; !ok {
-		return []string{empty}
+		return nil
 	} else {
 		for key := range v {
 			out = append(out, key)
@@ -365,10 +385,6 @@ func cleanSplit(input string, sepr rune, instances int) (out []string) {
 	q_start = -1
 	q_end = -1
 	i_len := len(input)
-
-	//if instances > 0 {
-	//	instances++
-	//}
 
 	for n, ch := range input {
 		switch ch {
@@ -607,8 +623,10 @@ func (s *Store) save(clear_unused_keys bool, sections ...string) error {
 	}
 
 	// cfgSeek returns first half and bottom half of file, excluding the key = value.
-	cfgSeek := func(section string, f source) (upper int, lower int) {
-		f.Seek(0, 0)
+	cfgSeek := func(section string, f source) (upper int, lower int, err error) {
+		if _, err = f.Seek(0, 0); err != nil {
+			return
+		}
 		s := bufio.NewScanner(f)
 
 		var line int
@@ -638,7 +656,7 @@ func (s *Store) save(clear_unused_keys bool, sections ...string) error {
 		if upper == -1 {
 			upper = line
 		}
-		return upper, line
+		return upper, line, nil
 	}
 
 	// Stores Key Value pairs
@@ -708,7 +726,10 @@ func (s *Store) save(clear_unused_keys bool, sections ...string) error {
 
 		tmp_dst.Reset()
 
-		head, tail := cfgSeek(section, tmp_src)
+		head, tail, err := cfgSeek(section, tmp_src)
+		if err != nil {
+			return err
+		}
 
 		err = copyFile(tmp_src, tmp_dst, 0, head)
 		if err != nil {
@@ -755,7 +776,7 @@ func (s *Store) save(clear_unused_keys bool, sections ...string) error {
 					}
 				default:
 					if strings.ContainsRune(txt, '=') {
-						key := strings.TrimSpace(strings.Split(txt, "=")[0])
+						key := cleanSplit(txt, '=', 1)[0]
 						if err = storeKV(tmp_dst, key, s.cfgStore[section]); err != nil {
 							return err
 						}

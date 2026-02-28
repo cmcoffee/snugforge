@@ -17,35 +17,45 @@ var ErrTimeout = errors.New("Timeout reached while waiting for bytes.")
 
 // waiting represents the initial state of a process.
 // halted represents a process that has been stopped.
+// timedout distinguishes a timeout halt from an explicit close.
 const (
 	waiting = 1 << iota
 	halted
+	timedout
 )
 
 // start_timer manages a timeout for processing input.
 // It signals completion via a channel when the timeout is reached.
 func start_timer(timeout time.Duration, flag *BitFlag, input chan []byte, expired chan struct{}) {
-	timeout_seconds := int64(timeout.Round(time.Second).Seconds())
+	if timeout <= 0 {
+		for !flag.Has(halted) {
+			time.Sleep(50 * time.Millisecond)
+		}
+		input <- nil
+		return
+	}
 
-	var cnt int64
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
 
-	for {
-		time.Sleep(time.Second)
+	var waitStart time.Time
+
+	for range ticker.C {
 		if flag.Has(halted) {
 			input <- nil
-			break
+			return
 		}
-
 		if flag.Has(waiting) {
-			cnt++
-			if timeout_seconds > 0 && cnt >= timeout_seconds {
-				flag.Set(halted)
+			if waitStart.IsZero() {
+				waitStart = time.Now()
+			} else if time.Since(waitStart) >= timeout {
+				flag.Set(halted | timedout)
 				expired <- struct{}{}
 				input <- nil
-				break
+				return
 			}
 		} else {
-			cnt = 0
+			waitStart = time.Time{}
 			flag.Set(waiting)
 		}
 	}
@@ -93,7 +103,7 @@ func NewReadCloser(source io.ReadCloser, timeout time.Duration) io.ReadCloser {
 		return source
 	}
 	t.src = source
-	t.input = make(chan []byte, 2)
+	t.input = make(chan []byte, 1)
 	t.output = make(chan resp, 1)
 	t.expired = make(chan struct{}, 1)
 
@@ -123,11 +133,11 @@ func (t *readCloser) Read(p []byte) (n int, err error) {
 	defer t.mutex.Unlock()
 
 	if t.flag.Has(halted) {
-		return t.src.Read(p)
+		if t.flag.Has(timedout) {
+			return 0, ErrTimeout
+		}
+		return 0, io.ErrClosedPipe
 	}
-
-	// Set an idle timer.
-	defer t.flag.Set(waiting)
 
 	t.input <- p
 
@@ -135,14 +145,16 @@ func (t *readCloser) Read(p []byte) (n int, err error) {
 	case data := <-t.output:
 		n = data.n
 		err = data.err
+		t.flag.Set(waiting)
+		if err != nil {
+			t.flag.Set(halted)
+		}
 	case <-t.expired:
-		t.flag.Set(halted)
-		return -1, ErrTimeout
+		t.flag.Set(halted | timedout)
+		t.src.Close() // interrupt the goroutine's blocking read
+		<-t.output    // wait for goroutine to finish with p before returning
+		return 0, ErrTimeout
 	}
-	if err != nil {
-		t.flag.Set(halted)
-	}
-	// Set an idle timer.
 	return
 }
 

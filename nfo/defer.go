@@ -122,13 +122,13 @@ func Defer(closer interface{}) func() error {
 // Exit terminates the program with the given exit code.
 func Exit(exit_code int) {
 	if r := recover(); r != nil {
-		Fatal("(panic) %s", string(debug.Stack()))
-	} else {
-		atomic.StoreInt32(&fatal_triggered, 2) // Ignore any Fatal() calls, we've been told to exit.
-		signalChan <- os.Kill
-		<-exit_lock
-		os.Exit(exit_code)
+		write2log(FATAL|_bypass_lock, "(panic) %s", string(debug.Stack()))
+		os.Exit(1)
 	}
+	atomic.StoreInt32(&fatal_triggered, 2) // Ignore any Fatal() calls, we've been told to exit.
+	signalChan <- os.Kill
+	<-exit_lock
+	os.Exit(exit_code)
 }
 
 // SetSignals sets the signals to be notified on.
@@ -183,16 +183,22 @@ func init() {
 			break
 		}
 
-		globalDefer.mutex.RLock()
-		defer globalDefer.mutex.RUnlock()
-
-		// Run through all globalDefer functions.
+		// Snapshot the IDs and functions under the lock so concurrent early-cleanup
+		// calls cannot modify the map while we iterate.
+		globalDefer.mutex.Lock()
+		snapshot := make([]func() error, 0, len(globalDefer.ids))
 		for i := len(globalDefer.ids) - 1; i >= 0; i-- {
-			globalDefer.mutex.RUnlock()
-			if err := globalDefer.d_map[globalDefer.ids[i]](); err != nil {
+			if fn, ok := globalDefer.d_map[globalDefer.ids[i]]; ok {
+				snapshot = append(snapshot, fn)
+			}
+		}
+		globalDefer.mutex.Unlock()
+
+		// Run through all globalDefer functions outside the lock.
+		for _, fn := range snapshot {
+			if err := fn(); err != nil {
 				write2log(ERROR|_bypass_lock, err.Error())
 			}
-			globalDefer.mutex.RLock()
 		}
 
 		// Wait on any process that have access to wait.

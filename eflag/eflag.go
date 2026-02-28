@@ -419,14 +419,16 @@ func (s *EFlagSet) PrintDefaults() {
 			text = append(text, fmt.Sprintf("%s-%s", space, name))
 		}
 
-		switch flag.DefValue[0] {
-		case '"':
+		switch {
+		case len(flag.DefValue) == 0:
+			// no default to display
+		case flag.DefValue[0] == '"':
 			if strings.HasPrefix(flag.DefValue, "\"<") && strings.HasSuffix(flag.DefValue, ">\"") {
 				text = append(text, fmt.Sprintf("=%q", flag.DefValue[2:len(flag.DefValue)-2]))
 			} else {
 				text = append(text, fmt.Sprintf("=%s", flag.DefValue))
 			}
-		case '<':
+		case flag.DefValue[0] == '<':
 			if flag.DefValue[len(flag.DefValue)-1] == '>' {
 				text = append(text, fmt.Sprintf("=%q", flag.DefValue[1:len(flag.DefValue)-1]))
 			} else {

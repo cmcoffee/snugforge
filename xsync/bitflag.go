@@ -16,13 +16,23 @@ func (B *BitFlag) Has(flag uint64) bool {
 }
 
 // Set BitFlag
-func (B *BitFlag) Set(flag uint64) bool {
-	return atomic.CompareAndSwapUint64((*uint64)(B), atomic.LoadUint64((*uint64)(B))&^uint64(flag), atomic.LoadUint64((*uint64)(B))|uint64(flag))
+func (B *BitFlag) Set(flag uint64) {
+	for {
+		old := atomic.LoadUint64((*uint64)(B))
+		if atomic.CompareAndSwapUint64((*uint64)(B), old, old|uint64(flag)) {
+			return
+		}
+	}
 }
 
 // Unset BitFlag
-func (B *BitFlag) Unset(flag uint64) bool {
-	return atomic.CompareAndSwapUint64((*uint64)(B), atomic.LoadUint64((*uint64)(B))|uint64(flag), atomic.LoadUint64((*uint64)(B))&^uint64(flag))
+func (B *BitFlag) Unset(flag uint64) {
+	for {
+		old := atomic.LoadUint64((*uint64)(B))
+		if atomic.CompareAndSwapUint64((*uint64)(B), old, old&^uint64(flag)) {
+			return
+		}
+	}
 }
 
 // Perform lookup of multiple flags, return index of first match or 0 if none

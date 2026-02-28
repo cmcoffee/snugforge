@@ -141,7 +141,7 @@ func (O *Options) String(desc string, value string, help string, mask_value bool
 		desc:  desc,
 		value: &value,
 		help:  help,
-		mask:  false,
+		mask:  mask_value,
 	}
 	O.Register(new_var)
 	return &value
