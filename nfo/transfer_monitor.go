@@ -189,17 +189,19 @@ func TransferMonitor(name string, total_size int64, flag int, source ReadSeekClo
 		transferDisplay.display = 1
 
 		go func() {
-			for {
+			ticker := time.NewTicker(200 * time.Millisecond)
+			defer ticker.Stop()
+
+			var mon_index int
+			var ticks_on_current int
+
+			for range ticker.C {
 				transferDisplay.update_lock.Lock()
 
-				var monitors []*tmon
-
-				// Clean up transfers.
+				// Clean up closed transfers.
 				for i := len(transferDisplay.monitors) - 1; i >= 0; i-- {
 					if transferDisplay.monitors[i].flag.Has(trans_closed) {
 						transferDisplay.monitors = append(transferDisplay.monitors[:i], transferDisplay.monitors[i+1:]...)
-					} else {
-						monitors = append(monitors, transferDisplay.monitors[i])
 					}
 				}
 
@@ -209,18 +211,26 @@ func TransferMonitor(name string, total_size int64, flag int, source ReadSeekClo
 					return
 				}
 
+				// Wrap index if monitors were removed.
+				if mon_index >= len(transferDisplay.monitors) {
+					mon_index = 0
+					ticks_on_current = 0
+				}
+
+				v := transferDisplay.monitors[mon_index]
+				mon_count := len(transferDisplay.monitors)
 				transferDisplay.update_lock.Unlock()
 
-				// Display transfers.
-				for _, v := range monitors {
-					for i := 0; i < 10; i++ {
-						if v.flag.Has(trans_active) {
-							Flash("[%s] %s", spinner(), v.showTransfer(false))
-						} else {
-							break
-						}
-						time.Sleep(time.Millisecond * 200)
-					}
+				if v.flag.Has(trans_active) {
+					Flash("[%s] %s", spinner(), v.showTransfer(false))
+				}
+
+				ticks_on_current++
+
+				// Show each monitor for ~2 seconds (10 ticks) before cycling.
+				if ticks_on_current >= 10 {
+					ticks_on_current = 0
+					mon_index = (mon_index + 1) % mon_count
 				}
 			}
 		}()
@@ -234,8 +244,8 @@ func TransferMonitor(name string, total_size int64, flag int, source ReadSeekClo
 // It returns the new offset and any error that occurred.
 func (tm *tmon) Seek(offset int64, whence int) (int64, error) {
 	o, err := tm.source.Seek(offset, whence)
-	tm.transferred = o
-	tm.offset = o
+	atomic.StoreInt64(&tm.transferred, o)
+	atomic.StoreInt64(&tm.offset, o)
 	return o, err
 }
 
@@ -243,13 +253,13 @@ func (tm *tmon) Seek(offset int64, whence int) (int64, error) {
 // count and handles potential errors, closing the transfer if necessary.
 func (tm *tmon) Read(p []byte) (n int, err error) {
 	n, err = tm.source.Read(p)
-	atomic.StoreInt64(&tm.transferred, atomic.LoadInt64(&tm.transferred)+int64(n))
+	atomic.AddInt64(&tm.transferred, int64(n))
 	if err != nil {
 		if tm.flag.Has(trans_closed) {
 			return
 		}
 		tm.flag.Set(trans_closed | trans_error)
-		if tm.transferred == 0 {
+		if atomic.LoadInt64(&tm.transferred) == 0 {
 			return
 		}
 	}
@@ -259,7 +269,7 @@ func (tm *tmon) Read(p []byte) (n int, err error) {
 // Close closes the underlying source and logs a transfer summary if needed.
 func (tm *tmon) Close() error {
 	tm.flag.Set(trans_closed)
-	if (tm.transferred > 0 || tm.total_size == 0) && !tm.flag.Has(NoSummary) {
+	if (atomic.LoadInt64(&tm.transferred) > 0 || tm.total_size == 0) && !tm.flag.Has(NoSummary) {
 		Log(tm.showTransfer(true))
 	}
 	return tm.source.Close()
@@ -268,6 +278,9 @@ func (tm *tmon) Close() error {
 // spacePrint prints the input string padded with spaces.
 // It pads the string with spaces to the minimum length.
 func spacePrint(min int, input string) string {
+	if len(input) >= min {
+		return input
+	}
 	output := make([]rune, min)
 	for i := 0; i < len(output); i++ {
 		output[i] = ' '
@@ -334,7 +347,8 @@ func (t *tmon) showRate() (rate string) {
 		since = 0.1
 	}
 
-	sz := float64(transferred-t.offset) * 8 / since
+	offset := atomic.LoadInt64(&t.offset)
+	sz := float64(transferred-offset) * 8 / since
 
 	names := []string{
 		"bps",
@@ -362,7 +376,7 @@ func (t *tmon) showRate() (rate string) {
 
 	t.rate = rate
 
-	if !t.flag.Has(trans_complete) && atomic.LoadInt64(&t.transferred)+t.offset == t.total_size {
+	if !t.flag.Has(trans_complete) && transferred+offset == t.total_size {
 		t.flag.Set(trans_complete)
 	}
 
@@ -371,7 +385,8 @@ func (t *tmon) showRate() (rate string) {
 
 // progressBar formats and returns a progress bar string.
 func (t *tmon) progressBar(name string) string {
-	num := int((float64(atomic.LoadInt64(&t.transferred)) / float64(t.total_size)) * 100)
+	transferred := atomic.LoadInt64(&t.transferred)
+	num := int((float64(transferred) / float64(t.total_size)) * 100)
 
 	if t.total_size == 0 {
 		num = 100
@@ -386,7 +401,7 @@ func (t *tmon) progressBar(name string) string {
 
 	if !t.flag.Has(NoRate) {
 		first_half = fmt.Sprintf("%s: %s", name, t.showRate())
-		second_half = fmt.Sprintf("(%s/%s)", HumanSize(t.transferred), HumanSize(t.total_size))
+		second_half = fmt.Sprintf("(%s/%s)", HumanSize(transferred), HumanSize(t.total_size))
 	} else {
 		first_half = fmt.Sprintf("%s:", name)
 	}

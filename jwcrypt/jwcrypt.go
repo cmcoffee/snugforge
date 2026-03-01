@@ -181,11 +181,29 @@ func jwtEncode(input interface{}) (string, error) {
 	return strings.TrimRight(base64.URLEncoding.EncodeToString(data), "="), nil
 }
 
-// SignRS256 creates a signed JWT token (header.payload.signature) using RS256.
-// Claims can be map[string]interface{} or a struct. Optional headerFields adds
-// custom JWT header fields (e.g. "kid", "type").
-func SignRS256(key *rsa.PrivateKey, claims interface{}, headerFields ...map[string]string) (string, error) {
-	hdr := map[string]string{"alg": "RS256"}
+// JWT signing algorithm.
+type JWTAlgorithm string
+
+const (
+	RS256 JWTAlgorithm = "RS256"
+	RS512 JWTAlgorithm = "RS512"
+)
+
+// SignJWT creates a signed JWT token (header.payload.signature) using the
+// specified algorithm (RS256 or RS512). Claims can be map[string]interface{}
+// or a struct. Optional headerFields adds custom JWT header fields (e.g. "kid", "type").
+func SignJWT(alg JWTAlgorithm, key *rsa.PrivateKey, claims interface{}, headerFields ...map[string]string) (string, error) {
+	var hash crypto.Hash
+	switch alg {
+	case RS256:
+		hash = crypto.SHA256
+	case RS512:
+		hash = crypto.SHA512
+	default:
+		return "", fmt.Errorf("unsupported JWT algorithm: %s", alg)
+	}
+
+	hdr := map[string]string{"alg": string(alg)}
 	for _, fields := range headerFields {
 		for k, v := range fields {
 			hdr[k] = v
@@ -202,7 +220,6 @@ func SignRS256(key *rsa.PrivateKey, claims interface{}, headerFields ...map[stri
 		return "", err
 	}
 
-	hash := crypto.SHA256
 	h := hash.New()
 	h.Write([]byte(fmt.Sprintf("%s.%s", header, payload)))
 	sig, err := rsa.SignPKCS1v15(rand.Reader, key, hash, h.Sum(nil))
@@ -216,4 +233,14 @@ func SignRS256(key *rsa.PrivateKey, claims interface{}, headerFields ...map[stri
 	}
 
 	return fmt.Sprintf("%s.%s.%s", header, payload, sigStr), nil
+}
+
+// SignRS256 creates a signed JWT token using RS256 (RSA SHA-256).
+func SignRS256(key *rsa.PrivateKey, claims interface{}, headerFields ...map[string]string) (string, error) {
+	return SignJWT(RS256, key, claims, headerFields...)
+}
+
+// SignRS512 creates a signed JWT token using RS512 (RSA SHA-512).
+func SignRS512(key *rsa.PrivateKey, claims interface{}, headerFields ...map[string]string) (string, error) {
+	return SignJWT(RS512, key, claims, headerFields...)
 }

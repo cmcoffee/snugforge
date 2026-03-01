@@ -186,6 +186,28 @@ func (O *Options) StringVar(p *string, desc string, value string, help string) {
 	return
 }
 
+// StringSelect registers a string selector option with the given description, default value, and choices.
+// It returns a pointer to the string variable holding the selected value.
+func (O *Options) StringSelect(desc string, value string, choices ...string) *string {
+	O.Register(&stringSelectorValue{
+		desc:    desc,
+		value:   &value,
+		choices: choices,
+	})
+	return &value
+}
+
+// StringSelectVar sets a string selector option with the given description, default value, and choices.
+// It registers the option with the Options menu.
+func (O *Options) StringSelectVar(p *string, desc string, value string, choices ...string) {
+	*p = value
+	O.Register(&stringSelectorValue{
+		desc:    desc,
+		value:   p,
+		choices: choices,
+	})
+}
+
 // Bool registers a boolean option with the given description and default value.
 // It returns a pointer to the boolean variable holding the value.
 func (O *Options) Bool(desc string, value bool) *bool {
@@ -288,6 +310,53 @@ func (S *stringValue) String() string {
 // Get returns the current string value.
 func (S *stringValue) Get() interface{} {
 	return S.value
+}
+
+// stringSelectorValue represents a string option selected from a predefined list of choices.
+type stringSelectorValue struct {
+	desc    string
+	value   *string
+	choices []string
+}
+
+// Set displays a numbered list of choices and prompts the user for a selection.
+// Returns true if the value was changed, false otherwise.
+func (S *stringSelectorValue) Set() bool {
+	for {
+		var text_buffer bytes.Buffer
+		txt := tabwriter.NewWriter(&text_buffer, 1, 8, 1, ' ', 0)
+
+		fmt.Fprintf(txt, "\n")
+		for i, choice := range S.choices {
+			fmt.Fprintf(txt, " [%d] %s\n", i+1, choice)
+		}
+		fmt.Fprintf(txt, "\n--> %s (select or 'q'): ", S.desc)
+		txt.Flush()
+
+		input := GetInput(text_buffer.String())
+		if len(input) == 0 || strings.ToLower(input) == "q" {
+			return false
+		}
+
+		sel, err := strconv.Atoi(input)
+		if err != nil || sel < 1 || sel > len(S.choices) {
+			Stdout("\n[ERROR] Please select a value between 1 and %d.\n", len(S.choices))
+			continue
+		}
+
+		*S.value = S.choices[sel-1]
+		return true
+	}
+}
+
+// Get returns the current string value.
+func (S *stringSelectorValue) Get() interface{} {
+	return S.value
+}
+
+// String returns a formatted string showing the description and current value.
+func (S *stringSelectorValue) String() string {
+	return fmt.Sprintf("%s: \t%s", S.desc, showVar(*S.value, false))
 }
 
 // boolValue represents a boolean option with its description and value.

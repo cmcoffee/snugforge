@@ -194,8 +194,7 @@ GetFile returns the file writer associated with the given flag.
 ```go
 func GetInput(prompt string) string
 ```
-GetInput prompts the user for input and returns the cleaned string. It reads
-from standard input until a newline character is encountered.
+GetInput prompts the user for input and returns the entered string.
 
 #### func  GetOutput
 
@@ -511,6 +510,23 @@ func (O *Options) String(desc string, value string, help string, mask_value bool
 String defines a string menu option displaying with specified desc in menu,
 default value, and help string. The return value is the address of an string
 variable that stores the value of the option.
+
+#### func (*Options) StringSelect
+
+```go
+func (O *Options) StringSelect(desc string, value string, choices ...string) *string
+```
+StringSelect registers a string selector option with the given description,
+default value, and choices. It returns a pointer to the string variable holding
+the selected value.
+
+#### func (*Options) StringSelectVar
+
+```go
+func (O *Options) StringSelectVar(p *string, desc string, value string, choices ...string)
+```
+StringSelectVar sets a string selector option with the given description,
+default value, and choices. It registers the option with the Options menu.
 
 #### func (*Options) StringVar
 

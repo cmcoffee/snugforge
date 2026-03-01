@@ -22,7 +22,7 @@ Requires **Go 1.24+**
 | [csvp](#csvp) | `snugforge/csvp` | Callback-based CSV row processor |
 | [mimebody](#mimebody) | `snugforge/mimebody` | MIME multipart/form-data encoder for HTTP requests |
 | [swapreader](#swapreader) | `snugforge/swapreader` | io.Reader that switches between a byte slice and a reader |
-| [jwcrypt](#jwcrypt) | `snugforge/jwcrypt` | JWK key parsing, RSA private key loading, and JWT RS256 signing |
+| [jwcrypt](#jwcrypt) | `snugforge/jwcrypt` | JWK key parsing, RSA private key loading, and JWT RS256/RS512 signing |
 
 ---
 
@@ -132,6 +132,11 @@ name = nfo.NeedAnswer("Name: ", nfo.GetInput)  // loop until non-empty
 opts := nfo.NewOptions("Select a mode:")
 opts.Register("fast", "Optimize for speed", fastHandler)
 opts.Register("safe", "Optimize for safety", safeHandler)
+opts.Select()
+
+// String selector from predefined choices
+opts := nfo.NewOptions("Settings:")
+env := opts.StringSelect("Environment", "staging", "dev", "prod")
 opts.Select()
 ```
 
@@ -535,7 +540,7 @@ n, _ = r.Read(buf)    // reads from stdin
 
 ### jwcrypt
 
-JWK key parsing (RFC 7517), RSA private key loading, and JWT RS256 signing (RFC 7515/7519).
+JWK key parsing (RFC 7517), RSA private key loading, and JWT RS256/RS512 signing (RFC 7515/7519).
 
 ```go
 import "github.com/cmcoffee/snugforge/jwcrypt"
@@ -565,7 +570,7 @@ key, err := jwcrypt.ParseRSAPrivateKey(keyData)
 key, err := jwcrypt.ParseRSAPrivateKey(keyData, []byte("secret"))
 ```
 
-**Sign a JWT with RS256**
+**Sign a JWT**
 
 ```go
 claims := map[string]interface{}{
@@ -574,8 +579,14 @@ claims := map[string]interface{}{
     "exp": time.Now().Add(5 * time.Minute).Unix(),
 }
 
-// Basic RS256 token
+// RS256 (RSA SHA-256)
 token, err := jwcrypt.SignRS256(key, claims)
+
+// RS512 (RSA SHA-512)
+token, err := jwcrypt.SignRS512(key, claims)
+
+// Generic signing with algorithm selection
+token, err := jwcrypt.SignJWT(jwcrypt.RS256, key, claims)
 
 // With custom header fields
 token, err := jwcrypt.SignRS256(key, claims, map[string]string{"kid": "key-id-123"})
