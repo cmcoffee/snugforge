@@ -13,7 +13,7 @@ import (
 var (
 	// SignalChan is a channel used to receive OS signals for graceful shutdown.
 	// It allows the application to respond to signals like SIGINT, SIGTERM, and SIGKILL.
-	signalChan = make(chan os.Signal)
+	signalChan = make(chan os.Signal, 1)
 
 	// globalDefer holds the deferred functions to be executed during shutdown.
 	// It uses a mutex to protect concurrent access to the deferred functions list.

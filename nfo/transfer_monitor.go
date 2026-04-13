@@ -179,7 +179,7 @@ func TransferMonitor(name string, total_size int64, flag int, source ReadSeekClo
 		} else {
 			spin_index = 0
 		}
-		return fmt.Sprintf(spin_txt[spin_index])
+		return spin_txt[spin_index]
 	}
 
 	transferDisplay.monitors = append(transferDisplay.monitors, tm)

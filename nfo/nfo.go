@@ -86,8 +86,8 @@ var (
 )
 
 // init initializes the logging configuration based on the environment.
-// It checks if stdout and stderr are connected to terminals and disables
-// timestamps if not.
+// It checks if stdout and stderr are connected to terminals and enables
+// timestamps by default for standard log levels.
 func init() {
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		piped_stdout = true
@@ -95,7 +95,7 @@ func init() {
 	if !term.IsTerminal(int(os.Stderr.Fd())) {
 		piped_stderr = true
 	}
-	HideTS()
+	ShowTS()
 }
 
 // _logger is a struct for logging messages to different outputs.
@@ -305,6 +305,7 @@ func UTC() {
 	timezone = time.UTC
 }
 
+// genTS appends a full timestamp [YYYY/MM/DD HH:MM:SS TZ] for file logging.
 func genTS(in *[]byte) {
 	CT := time.Now().In(timezone)
 
@@ -329,6 +330,22 @@ func genTS(in *[]byte) {
 
 	zone, _ := CT.Zone()
 	*ts = append(*ts, []byte(zone)[0:]...)
+	*ts = append(*ts, []byte("] ")[0:]...)
+}
+
+// genShortTS appends a short timestamp [HH:MM:SS] for screen output.
+func genShortTS(in *[]byte) {
+	CT := time.Now().In(timezone)
+	hour, m, sec := CT.Clock()
+
+	ts := in
+
+	*ts = append(*ts, '[')
+	Itoa(ts, hour, 2)
+	*ts = append(*ts, ':')
+	Itoa(ts, m, 2)
+	*ts = append(*ts, ':')
+	Itoa(ts, sec, 2)
 	*ts = append(*ts, []byte("] ")[0:]...)
 }
 
@@ -473,15 +490,6 @@ func write2log(flag uint32, vars ...interface{}) {
 
 	logger := l_map[flag&^_no_logging]
 
-	var pre []byte
-
-	if flag&_no_logging != _no_logging {
-		if logger.use_ts {
-			genTS(&pre)
-		}
-		pre = append(pre, []byte(logger.prefix)[0:]...)
-	}
-
 	// Reset buffer.
 	msgBuffer.Reset()
 
@@ -491,8 +499,17 @@ func write2log(flag uint32, vars ...interface{}) {
 	// Copy original output for export.
 	msg := msgBuffer.String()
 
+	// Build screen output: [HH:MM:SS] prefix + message
+	var screen_pre []byte
+	if flag&_no_logging != _no_logging {
+		if logger.use_ts {
+			genShortTS(&screen_pre)
+		}
+		screen_pre = append(screen_pre, []byte(logger.prefix)[0:]...)
+	}
+
 	output := msgBuffer.Bytes()
-	output = append(pre, output[0:]...)
+	output = append(screen_pre, output[0:]...)
 	bufferLen := len(output)
 
 	if bufferLen > 0 {
@@ -540,17 +557,19 @@ func write2log(flag uint32, vars ...interface{}) {
 		return
 	}
 
-	// Preprend timestamp for file.
-	if !logger.use_ts {
-		out_len := len(output)
-		genTS(&output)
-		out := output[out_len:]
-		out = append(out, output[0:out_len]...)
-		output = out
+	// Build file output: [YYYY/MM/DD HH:MM:SS TZ] prefix + message
+	var file_pre []byte
+	genTS(&file_pre)
+	if flag&_no_logging != _no_logging {
+		file_pre = append(file_pre, []byte(logger.prefix)[0:]...)
+	}
+	file_output := append(file_pre, msgBuffer.Bytes()...)
+	if len(file_output) == 0 || file_output[len(file_output)-1] != '\n' {
+		file_output = append(file_output, '\n')
 	}
 
 	// Write to file.
-	_, err := io.Copy(logger.fileout, bytes.NewReader(output))
+	_, err := io.Copy(logger.fileout, bytes.NewReader(file_output))
 	// Launch fatal in a go routine, as the mutex is currently locked.
 	if err != nil && FatalOnFileError {
 		go Fatal(err)

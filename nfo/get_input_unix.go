@@ -17,7 +17,7 @@ func GetInput(prompt string) string {
 	unesc := Defer(getEscape())
 	defer unesc()
 
-	fmt.Printf(prompt)
+	fmt.Printf("%s", prompt)
 
 	term.MakeRaw(int(syscall.Stdin))
 
