@@ -43,6 +43,32 @@ func (T *Options) Register(input Value) {
 	T.config = append(T.config, input)
 }
 
+// ShowWhen attaches a visibility condition to the most recently
+// registered option. The option is only displayed when condition
+// returns true. Has no effect if no options have been registered.
+func (T *Options) ShowWhen(condition func() bool) {
+	if len(T.config) == 0 {
+		return
+	}
+	last := len(T.config) - 1
+	T.config[last] = &conditionalValue{
+		condition: condition,
+		inner:     T.config[last],
+	}
+}
+
+// conditionalValue wraps a Value and only makes it visible when
+// its condition returns true.
+type conditionalValue struct {
+	condition func() bool
+	inner     Value
+}
+
+func (c *conditionalValue) Set() bool        { return c.inner.Set() }
+func (c *conditionalValue) Get() interface{} { return c.inner.Get() }
+func (c *conditionalValue) String() string   { return c.inner.String() }
+func (c *conditionalValue) visible() bool    { return c.condition() }
+
 // Select displays a menu of configurable options and allows the user to make a selection.
 // It returns true if a change was made, false otherwise.
 func (T *Options) Select(separate_last bool) (changed bool) {
@@ -52,7 +78,7 @@ func (T *Options) Select(separate_last bool) (changed bool) {
 	show_banner := func() {
 		if len(T.header) > 0 {
 			text_buffer.Reset()
-			fmt.Fprintf(txt, T.header)
+			fmt.Fprintf(txt, "%s", T.header)
 			fmt.Fprintf(txt, "\n\n")
 			txt.Flush()
 
@@ -65,17 +91,27 @@ func (T *Options) Select(separate_last bool) (changed bool) {
 	for {
 		text_buffer.Reset()
 		config_map := make(map[int]Value)
-		config_len := len(T.config) - 1
 
-		for i := 0; i <= config_len; i++ {
-			if i == config_len && config_len > 0 && separate_last {
-				config_map[0] = T.config[config_len]
+		// Build visible items, skipping conditional values whose condition is false.
+		var visible []Value
+		for _, v := range T.config {
+			if cv, ok := v.(*conditionalValue); ok && !cv.visible() {
+				continue
+			}
+			visible = append(visible, v)
+		}
+
+		num := 1
+		for i, v := range visible {
+			if i == len(visible)-1 && len(visible) > 1 && separate_last {
+				config_map[0] = v
 				fmt.Fprintf(txt, "\t\n")
-				fmt.Fprintf(txt, " [0] %s\n", T.config[config_len].String())
+				fmt.Fprintf(txt, " [0] %s\n", v.String())
 				break
 			}
-			config_map[i+1] = T.config[i]
-			fmt.Fprintf(txt, " [%d] %s\n", i+1, T.config[i].String())
+			config_map[num] = v
+			fmt.Fprintf(txt, " [%d] %s\n", num, v.String())
+			num++
 		}
 
 		fmt.Fprintf(txt, "\n%s: ", T.footer)
@@ -92,7 +128,12 @@ func (T *Options) Select(separate_last bool) (changed bool) {
 			} else {
 				if v, ok := config_map[sel]; ok {
 					changed = v.Set()
-					switch v.(type) {
+					// Unwrap conditional to check inner type.
+					inner := v
+					if cv, ok := inner.(*conditionalValue); ok {
+						inner = cv.inner
+					}
+					switch inner.(type) {
 					case *funcValue:
 						Stdout("\n")
 						show_banner()
@@ -208,9 +249,9 @@ func (O *Options) StringSelectVar(p *string, desc string, value string, choices 
 	})
 }
 
-// Bool registers a boolean option with the given description and default value.
+// Toggle registers a boolean toggle option with the given description and default value.
 // It returns a pointer to the boolean variable holding the value.
-func (O *Options) Bool(desc string, value bool) *bool {
+func (O *Options) Toggle(desc string, value bool) *bool {
 	new_var := &boolValue{
 		desc:  desc,
 		value: &value,
@@ -219,15 +260,21 @@ func (O *Options) Bool(desc string, value bool) *bool {
 	return &value
 }
 
-// BoolVar sets a boolean option with the given description and default value.
+// ToggleVar sets a boolean toggle option with the given description and default value.
 // It registers the option with the Options menu.
-func (O *Options) BoolVar(p *bool, desc string, value bool) {
+func (O *Options) ToggleVar(p *bool, desc string, value bool) {
 	*p = value
 	O.Register(&boolValue{
 		desc:  desc,
 		value: p,
 	})
 }
+
+// Bool is an alias for Toggle.
+func (O *Options) Bool(desc string, value bool) *bool { return O.Toggle(desc, value) }
+
+// BoolVar is an alias for ToggleVar.
+func (O *Options) BoolVar(p *bool, desc string, value bool) { O.ToggleVar(p, desc, value) }
 
 // Int registers an integer option with the given description, default value, help string, and range.
 // It returns a pointer to the integer variable holding the value.
@@ -287,12 +334,25 @@ type stringValue struct {
 
 // Set prompts the user for input and sets the string value.
 // Returns true if input was provided, false otherwise.
+// If the field already has a value, entering '-' clears it.
 func (S *stringValue) Set() bool {
 	var input string
+	clear_hint := ""
+	if len(*S.value) > 0 {
+		clear_hint = " (enter '-' to clear)"
+	}
+	promptFunc := GetInput
+	if S.mask {
+		promptFunc = GetSecret
+	}
 	if len(S.help) > 0 {
-		input = GetInput(fmt.Sprintf("\n# %s\n--> %s: ", S.help, S.desc))
+		input = promptFunc(fmt.Sprintf("\n# %s%s\n--> %s: ", S.help, clear_hint, S.desc))
 	} else {
-		input = GetInput(fmt.Sprintf("\n--> %s: ", S.desc))
+		input = promptFunc(fmt.Sprintf("\n--> %s%s: ", S.desc, clear_hint))
+	}
+	if input == "-" && len(*S.value) > 0 {
+		*S.value = ""
+		return true
 	}
 	if len(input) > 0 {
 		*S.value = input

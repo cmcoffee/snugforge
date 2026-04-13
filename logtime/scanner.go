@@ -16,9 +16,9 @@ const defaultBufSize = 4096
 type Scanner struct {
 	reader *bufio.Reader
 	layout string
-	tsLen   int
-	start   time.Time
-	stop    time.Time
+	tsLen  int
+	start  time.Time
+	stop   time.Time
 
 	// buffered next entry (read-ahead from previous Scan)
 	nextTime time.Time

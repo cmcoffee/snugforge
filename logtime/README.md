@@ -124,12 +124,12 @@ entries whose timestamp falls within a start/stop window.
 #### func  NewScanner
 
 ```go
-func NewScanner(example string, start, stop time.Time, r io.Reader) (*Scanner, error)
+func NewScanner(start, stop time.Time, r io.Reader) (*Scanner, error)
 ```
-NewScanner creates a Scanner that reads log entries from r. The example can be a
-bare timestamp or a full log line; the timestamp layout and prefix length are
-auto-detected from the leading tokens. Only entries with timestamps in [start,
-stop] are returned.
+NewScanner creates a Scanner that reads log entries from r. The timestamp layout
+and prefix length are auto-detected from the first timestamped line in the
+reader. Lines before the first timestamp are skipped. Only entries with
+timestamps in [start, stop] are returned.
 
 #### func (*Scanner) Err
 

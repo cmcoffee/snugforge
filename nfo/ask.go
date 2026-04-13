@@ -43,18 +43,7 @@ func PressEnter(prompt string) {
 	fmt.Printf("\r%s\r", string(blank_line))
 }
 
-// GetSecret prompts the user for a secret string.
-// It disables terminal echoing while reading input.
-func GetSecret(prompt string) string {
-	unesc := Defer(getEscape())
-	defer unesc()
-
-	fmt.Printf(prompt)
-	resp, _ := term.ReadPassword(int(syscall.Stdin))
-	output := cleanInput(string(resp))
-	fmt.Printf("\n")
-	return output
-}
+// GetSecret is defined per-platform in get_secret_unix.go and get_secret_windows.go.
 
 // GetConfirm prompts the user with a message and returns true if they enter "y" or "yes", and false if they enter "n" or "no".
 func GetConfirm(prompt string) bool {

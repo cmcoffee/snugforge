@@ -461,7 +461,7 @@ func (s *EFlagSet) PrintDefaults() {
 				for _, name := range s.order {
 					txt, ok := flag_text[name]
 					if ok {
-						fmt.Fprintf(output, txt)
+						fmt.Fprintf(output, "%s", txt)
 						delete(flag_text, name)
 					}
 				}
@@ -470,7 +470,7 @@ func (s *EFlagSet) PrintDefaults() {
 	}
 	for _, v := range flag_order {
 		if txt, ok := flag_text[v]; ok {
-			fmt.Fprintf(output, txt)
+			fmt.Fprintf(output, "%s", txt)
 		}
 	}
 
@@ -646,11 +646,23 @@ func (s *EFlagSet) Parse(args []string) (err error) {
 			if val, ok := val_map[v.Name]; ok {
 				if _, ok := (*(val)).(*multiValue); ok && !has_multi {
 					def := remove_quotes(v.DefValue)
+					if def == "" {
+						def = "<" + v.Name + ">"
+					}
 					has_multi = true
 					arg_names = append(arg_names, fmt.Sprintf("%s...", def))
 				} else {
-					arg_names = append(arg_names, remove_quotes(v.DefValue))
+					def := remove_quotes(v.DefValue)
+					if def == "" {
+						def = "<" + v.Name + ">"
+					}
+					arg_names = append(arg_names, def)
 				}
+			} else {
+				// Flag's default was empty (not an example placeholder),
+				// so it wasn't captured by clear_examples. Use the flag
+				// name as the usage placeholder.
+				arg_names = append(arg_names, "<"+v.Name+">")
 			}
 		}
 		if s.name == "" {

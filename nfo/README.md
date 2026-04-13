@@ -427,16 +427,14 @@ exit character.
 ```go
 func (O *Options) Bool(desc string, value bool) *bool
 ```
-Bool registers a boolean option with the given description and default value. It
-returns a pointer to the boolean variable holding the value.
+Bool is an alias for Toggle.
 
 #### func (*Options) BoolVar
 
 ```go
 func (O *Options) BoolVar(p *bool, desc string, value bool)
 ```
-BoolVar sets a boolean option with the given description and default value. It
-registers the option with the Options menu.
+BoolVar is an alias for ToggleVar.
 
 #### func (*Options) Func
 
@@ -502,6 +500,15 @@ func (T *Options) Select(separate_last bool) (changed bool)
 Select displays a menu of configurable options and allows the user to make a
 selection. It returns true if a change was made, false otherwise.
 
+#### func (*Options) ShowWhen
+
+```go
+func (T *Options) ShowWhen(condition func() bool)
+```
+ShowWhen attaches a visibility condition to the most recently registered option.
+The option is only displayed when condition returns true. Has no effect if no
+options have been registered.
+
 #### func (*Options) String
 
 ```go
@@ -552,6 +559,22 @@ func (O *Options) TextAreaVar(p *string, desc string, prompt string)
 ```
 TextAreaVar registers a new text area input field using a pre-existing string
 pointer.
+
+#### func (*Options) Toggle
+
+```go
+func (O *Options) Toggle(desc string, value bool) *bool
+```
+Toggle registers a boolean toggle option with the given description and default
+value. It returns a pointer to the boolean variable holding the value.
+
+#### func (*Options) ToggleVar
+
+```go
+func (O *Options) ToggleVar(p *bool, desc string, value bool)
+```
+ToggleVar sets a boolean toggle option with the given description and default
+value. It registers the option with the Options menu.
 
 #### type ProgressBar
 
