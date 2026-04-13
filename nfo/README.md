@@ -500,6 +500,13 @@ func (T *Options) Select(separate_last bool) (changed bool)
 Select displays a menu of configurable options and allows the user to make a
 selection. It returns true if a change was made, false otherwise.
 
+#### func (*Options) Separator
+
+```go
+func (T *Options) Separator()
+```
+Separator adds a visual break (blank line) between menu items.
+
 #### func (*Options) ShowWhen
 
 ```go

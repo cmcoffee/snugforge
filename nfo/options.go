@@ -43,6 +43,18 @@ func (T *Options) Register(input Value) {
 	T.config = append(T.config, input)
 }
 
+// Separator adds a visual break (blank line) between menu items.
+func (T *Options) Separator() {
+	T.config = append(T.config, &separatorValue{})
+}
+
+// separatorValue renders as a blank line in the menu. It is not selectable.
+type separatorValue struct{}
+
+func (s *separatorValue) Set() bool        { return false }
+func (s *separatorValue) Get() interface{} { return nil }
+func (s *separatorValue) String() string   { return "" }
+
 // ShowWhen attaches a visibility condition to the most recently
 // registered option. The option is only displayed when condition
 // returns true. Has no effect if no options have been registered.
@@ -103,6 +115,11 @@ func (T *Options) Select(separate_last bool) (changed bool) {
 
 		num := 1
 		for i, v := range visible {
+			// Separator: blank line, no number.
+			if _, ok := v.(*separatorValue); ok {
+				fmt.Fprintf(txt, "\t\n")
+				continue
+			}
 			if i == len(visible)-1 && len(visible) > 1 && separate_last {
 				config_map[0] = v
 				fmt.Fprintf(txt, "\t\n")
