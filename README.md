@@ -23,6 +23,10 @@ Requires **Go 1.24+**
 | [mimebody](#mimebody) | `snugforge/mimebody` | MIME multipart/form-data encoder for HTTP requests |
 | [swapreader](#swapreader) | `snugforge/swapreader` | io.Reader that switches between a byte slice and a reader |
 | [jwcrypt](#jwcrypt) | `snugforge/jwcrypt` | JWK key parsing, RSA private key loading, and JWT RS256/RS512 signing |
+| [logtime](#logtime) | `snugforge/logtime` | Log timestamp parsing and time-windowed log scanning |
+| [logtail](#logtail) | `snugforge/logtail` | Continuous log file tailing with pattern-matched callbacks |
+| [xpect](#xpect) | `snugforge/xpect` | Expect-like automation for interactive CLI programs |
+| [apiclient](#apiclient) | `snugforge/apiclient` | HTTP API client with OAuth2 auth, retries, rate limiting, and pagination |
 
 ---
 
@@ -129,15 +133,19 @@ nfo.PressEnter("Press Enter to continue...")
 name = nfo.NeedAnswer("Name: ", nfo.GetInput)  // loop until non-empty
 
 // Interactive options menu
-opts := nfo.NewOptions("Select a mode:")
-opts.Register("fast", "Optimize for speed", fastHandler)
-opts.Register("safe", "Optimize for safety", safeHandler)
-opts.Select()
+opts := nfo.NewOptions("Settings", "Selection", 'x')
+opts.String("Username", "", "Enter your username", false)
+opts.Secret("Password", "", "Enter your password")
+opts.Toggle("Debug Mode", false)
+opts.Int("Max Retries", 3, "Number of retries", 1, 10)
+opts.StringSelect("Environment", "staging", "dev", "staging", "prod")
+opts.Func("Run Setup", setupHandler)
 
-// String selector from predefined choices
-opts := nfo.NewOptions("Settings:")
-env := opts.StringSelect("Environment", "staging", "dev", "prod")
-opts.Select()
+// Conditional visibility — only show when a condition is met
+opts.Toggle("Verbose Logging", false)
+opts.ShowWhen(func() bool { return debugEnabled })
+
+opts.Select(false)  // false = don't separate last item
 ```
 
 **Utility**
@@ -593,6 +601,342 @@ token, err := jwcrypt.SignRS256(key, claims, map[string]string{"kid": "key-id-12
 ```
 
 Claims can be `map[string]interface{}` or any struct that marshals to JSON.
+
+---
+
+### logtime
+
+Log timestamp parser supporting 20+ formats with auto-detection, and a time-windowed log scanner for extracting entries within a time range.
+
+```go
+import "github.com/cmcoffee/snugforge/logtime"
+```
+
+**Timestamp Parsing**
+
+```go
+// Parse auto-detects the format from 20+ common layouts
+t, err := logtime.Parse("2026-03-05T09:01:20+00:00")
+
+// Panics on failure (useful for tests/constants)
+t = logtime.MustParse("2026-03-05 03:28:19")
+
+// Register custom formats
+logtime.Register("2006/01/02 15:04")
+```
+
+Supported formats include ISO 8601, RFC 3339, RFC 1123, Apache CLF, syslog, ANSIC/Unix, and space-separated date-time variants with optional timezone and sub-second precision.
+
+**Time-Windowed Log Scanning**
+
+```go
+start, _ := logtime.Parse("2026-03-05 00:00:00")
+stop, _ := logtime.Parse("2026-03-05 23:59:59")
+
+file, _ := os.Open("app.log")
+defer file.Close()
+
+scanner, err := logtime.NewScanner(start, stop, file)
+if err != nil {
+    log.Fatal(err)
+}
+
+for scanner.Scan() {
+    fmt.Printf("[%s] %s\n", scanner.Time(), scanner.Text())
+}
+if err := scanner.Err(); err != nil {
+    log.Fatal(err)
+}
+```
+
+The scanner auto-detects the timestamp format and prefix length from the first timestamped line. Continuation lines (lines without a timestamp) are grouped with their preceding entry. Only entries with timestamps in `[start, stop]` are returned.
+
+---
+
+### logtail
+
+Continuous log file tailing with pattern-matched callbacks. Watches a log file for new content, parses timestamps using the `logtime` package, and fires registered callbacks when lines match regular expression patterns. Handles file rotation and truncation automatically.
+
+```go
+import "github.com/cmcoffee/snugforge/logtail"
+```
+
+**Basic Usage**
+
+```go
+tail := logtail.Open("/var/log/app.log")
+
+// Register pattern callbacks (regex matched against timestamp-stripped text)
+tail.MustOn(`ERROR (.+)`, func(m logtail.Match) {
+    fmt.Printf("[%s] error: %s\n", m.Time, m.Groups[0])
+})
+
+tail.MustOn(`request completed in (\d+)ms`, func(m logtail.Match) {
+    fmt.Printf("latency: %sms\n", m.Groups[0])
+})
+
+// Blocks until Close is called or an unrecoverable error occurs
+go func() {
+    if err := tail.Run(); err != nil {
+        log.Fatal(err)
+    }
+}()
+
+// Stop tailing (safe from any goroutine)
+tail.Close()
+```
+
+**Options**
+
+```go
+tail.SetInterval(500 * time.Millisecond)  // poll interval (default 250ms)
+tail.FromStart()                           // process existing content instead of seeking to end
+```
+
+**Match Fields**
+
+| Field | Description |
+|-------|-------------|
+| `Time` | Parsed timestamp of the log entry |
+| `Text` | Log line with timestamp prefix stripped |
+| `Full` | Original complete log line |
+| `Groups` | Capture group matches from the pattern |
+
+Timestamp format is auto-detected from the first timestamped line. Entries at or before the last seen timestamp are skipped to prevent reprocessing after rotation.
+
+---
+
+### xpect
+
+Expect-like automation for interactive command-line programs. Spawn a process, send input, and wait for expected output patterns with configurable timeouts.
+
+```go
+import "github.com/cmcoffee/snugforge/xpect"
+```
+
+**Basic Usage**
+
+```go
+sess, err := xpect.Command("ssh", "user@host")
+if err != nil {
+    log.Fatal(err)
+}
+defer sess.Close()
+
+// Wait for password prompt and send password
+match, err := sess.Expect("password:")
+if err != nil {
+    log.Fatal(err)
+}
+sess.SendLine("my-password")
+
+// Wait for shell prompt
+sess.Expect("\\$")
+sess.SendLine("ls -la")
+sess.Expect("\\$")
+
+// Wait for process to exit
+sess.SendLine("exit")
+sess.Wait()
+```
+
+**Timeouts**
+
+```go
+sess.SetTimeout(10 * time.Second)                        // set default timeout
+match, err := sess.ExpectTimeout("ready", 5*time.Second) // per-call timeout
+err = sess.ExpectEOFTimeout(30 * time.Second)            // wait for EOF
+```
+
+**Pattern Matching**
+
+`Expect` uses regular expressions. Capture groups are available in the result:
+
+```go
+match, _ := sess.Expect(`version (\d+\.\d+)`)
+fmt.Println(match.Before)    // output before the match
+fmt.Println(match.Full)      // full matched text
+fmt.Println(match.Groups[0]) // first capture group
+```
+
+**Interactive Mode**
+
+```go
+// Hand control to the user for live interaction
+sess.Interact(os.Stdin, os.Stdout)
+
+// Or interact until a pattern matches, then resume scripting
+match, _ := sess.InteractUntil(os.Stdin, os.Stdout, "logout")
+```
+
+**Logging**
+
+```go
+sess.Log = os.Stdout   // watch session output in real time
+sess.SendLog = true     // also log Send/SendLine calls
+sess.SendMask = "***"   // mask the next Send (for passwords)
+```
+
+---
+
+### apiclient
+
+HTTP API client with OAuth2 authentication, automatic retries with exponential backoff, rate limiting, pagination, and pluggable error scanning. Token lifecycle management is built in — the client handles acquisition, refresh, and encrypted storage.
+
+```go
+import "github.com/cmcoffee/snugforge/apiclient"
+```
+
+**Basic Setup**
+
+```go
+client := new(apiclient.APIClient)
+client.Server = "api.example.com"
+client.VerifySSL = true
+client.RequestTimeout = 30 * time.Second
+client.ConnectTimeout = 10 * time.Second
+client.Retries = 3
+
+// OAuth2 setup
+client.ApplicationID = "my-app-id"
+client.ClientSecret("my-secret")
+client.SetDatabase(db)  // kvlite.Store for token persistence
+client.NewToken = func(username string) (*apiclient.Auth, error) {
+    // Acquire initial token (password grant, auth code, etc.)
+    return &apiclient.Auth{
+        AccessToken:  "...",
+        RefreshToken: "...",
+        Expires:      time.Now().Add(time.Hour).Unix(),
+    }, nil
+}
+
+// Or use a static API key instead of OAuth2
+client.StaticToken = "my-api-key"
+
+// Or use a fully custom auth function (overrides all other auth)
+client.AuthFunc = func(req *http.Request) {
+    req.Header.Set("X-API-Key", "my-key")
+}
+
+// Use HTTP instead of HTTPS (defaults to "https")
+client.URLScheme = "http"
+```
+
+**Making Requests**
+
+```go
+var result MyResponse
+err := client.Call(apiclient.APIRequest{
+    Username: "user@example.com",
+    Method:   http.MethodGet,
+    Path:     "/api/v1/users",
+    Params:   apiclient.SetParams(apiclient.Query{"limit": 50}),
+    Output:   &result,
+})
+
+// POST with JSON body
+err = client.Call(apiclient.APIRequest{
+    Username: "user@example.com",
+    Method:   http.MethodPost,
+    Path:     "/api/v1/users",
+    Params:   apiclient.SetParams(apiclient.PostJSON{"name": "Alice", "role": "admin"}),
+    Output:   &result,
+})
+
+// File upload with multipart form data
+err = client.Call(apiclient.APIRequest{
+    Username: "user@example.com",
+    Method:   http.MethodPost,
+    Path:     "/api/v1/upload",
+    Params:   apiclient.SetParams(apiclient.MimeBody{
+        FieldName: "file",
+        FileName:  "report.csv",
+        Source:    file,
+        AddFields: map[string]string{"description": "Monthly report"},
+    }),
+})
+```
+
+**Pagination**
+
+```go
+var users []User
+err := client.PageCall(apiclient.APIRequest{
+    Username: "user@example.com",
+    Method:   http.MethodGet,
+    Path:     "/api/v1/users",
+    Output:   &users,
+}, 0, 100)  // offset, limit per page
+```
+
+**Rate Limiting**
+
+```go
+client.SetLimiter(10)          // max 10 concurrent API calls
+client.SetTransferLimiter(5)   // max 5 concurrent file transfers
+```
+
+**Error Handling**
+
+```go
+client.RetryErrorCodes = []string{"ERR_INTERNAL_SERVER_ERROR", "HTTP_STATUS_503"}
+client.TokenErrorCodes = []string{"ERR_INVALID_GRANT", "ERR_AUTH_UNAUTHORIZED"}
+
+// Custom error scanner for API-specific error formats
+client.ErrorScanner = func(body []byte) apiclient.APIError {
+    var e apiclient.APIError
+    var resp struct {
+        Error   string `json:"error"`
+        Message string `json:"message"`
+    }
+    if json.Unmarshal(body, &resp) == nil && resp.Error != "" {
+        e.Register(resp.Error, resp.Message)
+    }
+    return e
+}
+
+// Check error types
+if apiclient.IsAPIError(err, "NOT_FOUND") {
+    // handle 404
+}
+err = apiclient.PrefixAPIError("user lookup", err)
+```
+
+**Streaming & Raw Responses**
+
+```go
+// SendRawRequest returns the response without consuming the body —
+// use for SSE, chunked JSON, or large downloads
+req, _ := client.NewRequest(http.MethodGet, "/api/v1/events/stream")
+resp, err := client.SendRawRequest("user@example.com", req)
+if err != nil {
+    log.Fatal(err)
+}
+defer resp.Body.Close()
+// read resp.Body incrementally...
+```
+
+**Context Support**
+
+```go
+ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+defer cancel()
+
+req, _ := client.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/status")
+resp, err := client.SendRequest("user@example.com", req)
+```
+
+**Custom Retry Logic**
+
+```go
+retry := client.InitRetry("user@example.com", "fetch user list")
+for {
+    result, err := doSomething()
+    if !retry.CheckForRetry(err) {
+        break
+    }
+}
+```
 
 ---
 
