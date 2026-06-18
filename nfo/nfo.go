@@ -430,6 +430,14 @@ func Fatal(vars ...interface{}) {
 	}
 }
 
+// Critical exits via Fatal if err is non-nil. No-op when err is nil.
+// Convenience for the very common `if err != nil { Fatal(err) }` pattern.
+func Critical(err error) {
+	if err != nil {
+		Fatal(err)
+	}
+}
+
 // Debug logs debug-level messages.
 func Debug(vars ...interface{}) {
 	write2log(DEBUG, vars...)
