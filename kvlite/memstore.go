@@ -83,6 +83,12 @@ func (K *memStore) Tables() (tables []string, err error) {
 	return tables, err
 }
 
+// AllTables lists every bucket verbatim, including separator-containing
+// sub-store namespaces that Tables() filters out.
+func (K *memStore) AllTables() (tables []string, err error) {
+	return K.buckets(false)
+}
+
 // Drop removes the table and all its associated data from the store.
 // It deletes all keys that have the table name as a prefix.
 func (K *memStore) Drop(table string) (err error) {

@@ -106,6 +106,12 @@ func (d substore) Tables() (buckets []string, err error) {
 	return buckets, err
 }
 
+// AllTables lists every bucket in this substore's namespace, including
+// separator-containing sub-store names that Tables() filters out.
+func (d substore) AllTables() (buckets []string, err error) {
+	return d.buckets(false)
+}
+
 // Unset deletes the key/value pair in the specified table.
 func (d substore) Unset(table, key string) error {
 	return d.db.Unset(d.apply_prefix(table), key)

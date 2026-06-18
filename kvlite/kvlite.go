@@ -32,6 +32,10 @@ var ErrLocked = errors.New("Database is currently in use by an exisiting instanc
 type Store interface {
 	// Tables provides a list of all tables.
 	Tables() (tables []string, err error)
+	// AllTables lists EVERY bucket, including sub-store namespaces — the
+	// separator-containing names Tables() hides. For maintenance / enumeration
+	// (e.g. dropping all of a sub-scope's buckets by prefix).
+	AllTables() (tables []string, err error)
 	// Table creats a key/val direct to a specified Table.
 	Table(table string) Table
 	// SubStore Creates a new bucket with a different namespace, tied to
@@ -305,6 +309,12 @@ func (K *boltDB) Tables() (tables []string, err error) {
 		}
 	}
 	return tables, err
+}
+
+// AllTables lists every bucket name verbatim, including the separator-containing
+// sub-store namespaces Tables() filters out.
+func (K *boltDB) AllTables() (tables []string, err error) {
+	return K.buckets(false)
 }
 
 // Table returns a `Table` for the given table name.
