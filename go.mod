@@ -1,14 +1,12 @@
 module github.com/cmcoffee/snugforge
 
-go 1.24.0
-
-toolchain go1.24.6
+go 1.25.0
 
 require (
-	github.com/boltdb/bolt v1.3.1
 	github.com/charmbracelet/bubbles v0.21.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78
+	go.etcd.io/bbolt v1.5.0
 	golang.org/x/term v0.19.0
 )
 
@@ -31,6 +29,6 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/crypto v0.22.0 // indirect
-	golang.org/x/sys v0.36.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 )

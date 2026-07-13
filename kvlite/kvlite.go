@@ -8,7 +8,7 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
-	"github.com/boltdb/bolt"
+	bolt "go.etcd.io/bbolt"
 	"strings"
 	"time"
 )
