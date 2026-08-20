@@ -951,4 +951,7 @@ go test ./...           # run tests
 
 ## License
 
-MIT
+Dual-licensed under either [Apache 2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT),
+at your option — take whichever fits what you are building. Offered together so
+that a project under either license can use snugforge without anyone having to
+reason about compatibility.
