@@ -1,3 +1,11 @@
+// Package jwcrypt signs and verifies RSA-based JSON Web Tokens, and parses the
+// keys they are signed with: JWK documents (public or private), JWK Sets, and
+// PEM/PKCS8 private keys.
+//
+// It does no network I/O. Fetching an issuer's OIDC discovery document and
+// caching the keys behind it are application decisions -- which HTTP client,
+// which timeouts, when a rotation warrants a re-fetch -- so a caller retrieves
+// the JWK Set itself and hands the bytes to ParseJWKSet.
 package jwcrypt
 
 import (
@@ -5,6 +13,7 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
@@ -16,17 +25,45 @@ import (
 )
 
 // JWK represents a parsed JSON Web Key with all standard attributes (RFC 7517).
+//
+// A JWK may carry a public key, a private key, or both. PublicKey is populated
+// whenever the key parses at all; PrivateKey only when the private parameters
+// are present. An issuer's published signing keys -- the JWK Set behind an OIDC
+// discovery document -- are public-only, so a caller verifying a token reads
+// PublicKey and must expect PrivateKey to be nil.
 type JWK struct {
 	KeyType    string   `json:"kty"`
 	Use        string   `json:"use,omitempty"`
 	KeyOps     []string `json:"key_ops,omitempty"`
 	Algorithm  string   `json:"alg,omitempty"`
 	KeyID      string   `json:"kid,omitempty"`
+	X5C        []string `json:"x5c,omitempty"` // base64 DER certificate chain, leaf first
+	PublicKey  *rsa.PublicKey
 	PrivateKey *rsa.PrivateKey
+
+	// Extra holds members outside RFC 7517's registry, kept raw. Issuers attach
+	// their own (Microsoft's Bot Framework publishes "endorsements"), and a
+	// caller that needs one should not have to re-parse the document to see it.
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+// jwkStandardMembers are the members ParseJWK decodes itself; anything else in
+// the document lands in JWK.Extra.
+var jwkStandardMembers = map[string]bool{
+	"kty": true, "use": true, "key_ops": true, "alg": true, "kid": true,
+	"x5c": true, "x5t": true, "x5u": true, "x5t#S256": true,
+	"n": true, "e": true, "d": true, "p": true, "q": true,
+	"dp": true, "dq": true, "qi": true, "oth": true,
 }
 
 // ParseJWK parses a JWK (JSON Web Key) and returns a JWK struct with all
-// standard attributes and the extracted RSA private key.
+// standard attributes and the extracted RSA key material.
+//
+// Public-only keys are supported: when the private parameters are absent the
+// result carries PublicKey and a nil PrivateKey. That is the normal shape of a
+// key fetched from an issuer's JWK Set, and rejecting it -- as this function
+// once did, by unconditionally assembling and validating an rsa.PrivateKey --
+// left no way to verify anything this package signed.
 func ParseJWK(jwkData []byte) (*JWK, error) {
 	var raw struct {
 		Kty    string   `json:"kty"`
@@ -34,6 +71,7 @@ func ParseJWK(jwkData []byte) (*JWK, error) {
 		KeyOps []string `json:"key_ops,omitempty"`
 		Alg    string   `json:"alg,omitempty"`
 		Kid    string   `json:"kid,omitempty"`
+		X5C    []string `json:"x5c,omitempty"`
 		N      string   `json:"n"`
 		E      string   `json:"e"`
 		D      string   `json:"d"`
@@ -52,73 +90,124 @@ func ParseJWK(jwkData []byte) (*JWK, error) {
 		return nil, fmt.Errorf("unsupported key type: %s", raw.Kty)
 	}
 
-	decodeB64 := func(s string) (*big.Int, error) {
-		b, err := base64.RawURLEncoding.DecodeString(s)
-		if err != nil {
-			return nil, err
-		}
-		return new(big.Int).SetBytes(b), nil
+	out := &JWK{
+		KeyType:   raw.Kty,
+		Use:       raw.Use,
+		KeyOps:    raw.KeyOps,
+		Algorithm: raw.Alg,
+		KeyID:     raw.Kid,
+		X5C:       raw.X5C,
 	}
 
-	n, err := decodeB64(raw.N)
-	if err != nil {
-		return nil, fmt.Errorf("invalid modulus (n): %w", err)
+	var members map[string]json.RawMessage
+	if json.Unmarshal(jwkData, &members) == nil {
+		for name, value := range members {
+			if jwkStandardMembers[name] {
+				continue
+			}
+			if out.Extra == nil {
+				out.Extra = make(map[string]json.RawMessage)
+			}
+			out.Extra[name] = value
+		}
 	}
-	e, err := decodeB64(raw.E)
+
+	pub, err := jwkPublicKey(raw.N, raw.E, raw.X5C)
 	if err != nil {
-		return nil, fmt.Errorf("invalid exponent (e): %w", err)
+		return nil, err
 	}
-	d, err := decodeB64(raw.D)
+	out.PublicKey = pub
+
+	// Private parameters are optional. Absent them this is a public key and we
+	// are done.
+	if raw.D == "" && raw.P == "" && raw.Q == "" {
+		return out, nil
+	}
+	if raw.D == "" || raw.P == "" || raw.Q == "" {
+		return nil, fmt.Errorf("incomplete private key: d, p and q are all required")
+	}
+
+	d, err := decodeJWKInt(raw.D)
 	if err != nil {
 		return nil, fmt.Errorf("invalid private exponent (d): %w", err)
 	}
-	p, err := decodeB64(raw.P)
+	p, err := decodeJWKInt(raw.P)
 	if err != nil {
 		return nil, fmt.Errorf("invalid prime (p): %w", err)
 	}
-	q, err := decodeB64(raw.Q)
+	q, err := decodeJWKInt(raw.Q)
 	if err != nil {
 		return nil, fmt.Errorf("invalid prime (q): %w", err)
 	}
-	dp, err := decodeB64(raw.Dp)
-	if err != nil {
-		return nil, fmt.Errorf("invalid dp: %w", err)
-	}
-	dq, err := decodeB64(raw.Dq)
-	if err != nil {
-		return nil, fmt.Errorf("invalid dq: %w", err)
-	}
-	qi, err := decodeB64(raw.Qi)
-	if err != nil {
-		return nil, fmt.Errorf("invalid qi: %w", err)
-	}
 
 	key := &rsa.PrivateKey{
-		PublicKey: rsa.PublicKey{
-			N: n,
-			E: int(e.Int64()),
-		},
-		D:      d,
-		Primes: []*big.Int{p, q},
+		PublicKey: *pub,
+		D:         d,
+		Primes:    []*big.Int{p, q},
 	}
-	key.Precomputed = rsa.PrecomputedValues{
-		Dp:   dp,
-		Dq:   dq,
-		Qinv: qi,
-	}
-
 	if err := key.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid RSA key: %w", err)
 	}
+	// Derive dp/dq/qi rather than trusting the document's. They are a function
+	// of d, p and q, which Validate has just checked, and Precompute also fills
+	// the unexported state the crypto/rsa fast paths look for -- which assigning
+	// rsa.PrecomputedValues by hand does not, so a hand-filled key silently took
+	// the slow path.
+	key.Precompute()
+	out.PrivateKey = key
 
-	return &JWK{
-		KeyType:    raw.Kty,
-		Use:        raw.Use,
-		KeyOps:     raw.KeyOps,
-		Algorithm:  raw.Alg,
-		KeyID:      raw.Kid,
-		PrivateKey: key,
-	}, nil
+	return out, nil
+}
+
+// jwkPublicKey builds the public key from the JWK's modulus and exponent,
+// falling back to the leaf certificate in x5c for issuers that publish a chain
+// and nothing else.
+func jwkPublicKey(nStr, eStr string, x5c []string) (*rsa.PublicKey, error) {
+	if nStr != "" && eStr != "" {
+		n, err := decodeJWKInt(nStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid modulus (n): %w", err)
+		}
+		e, err := decodeJWKInt(eStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid exponent (e): %w", err)
+		}
+		// The exponent lands in an int, so a document claiming a huge one must be
+		// refused rather than silently truncated.
+		if e.Sign() <= 0 || e.BitLen() > 31 {
+			return nil, fmt.Errorf("invalid exponent (e): out of range")
+		}
+		return &rsa.PublicKey{N: n, E: int(e.Int64())}, nil
+	}
+
+	if len(x5c) > 0 {
+		// x5c is standard base64 (RFC 7517 4.7), not the base64url the key
+		// parameters use.
+		der, err := base64.StdEncoding.DecodeString(x5c[0])
+		if err != nil {
+			return nil, fmt.Errorf("invalid x5c certificate: %w", err)
+		}
+		cert, err := x509.ParseCertificate(der)
+		if err != nil {
+			return nil, fmt.Errorf("invalid x5c certificate: %w", err)
+		}
+		pub, ok := cert.PublicKey.(*rsa.PublicKey)
+		if !ok {
+			return nil, fmt.Errorf("x5c certificate does not carry an RSA public key")
+		}
+		return pub, nil
+	}
+
+	return nil, fmt.Errorf("JWK carries neither n/e nor x5c")
+}
+
+// decodeJWKInt decodes a base64url JWK integer parameter.
+func decodeJWKInt(s string) (*big.Int, error) {
+	b, err := base64.RawURLEncoding.DecodeString(s)
+	if err != nil {
+		return nil, err
+	}
+	return new(big.Int).SetBytes(b), nil
 }
 
 // ParseRSAPrivateKey auto-detects JWK (JSON) vs PEM/PKCS8 format and parses
@@ -135,6 +224,12 @@ func ParseRSAPrivateKey(keyData []byte, passphrase ...[]byte) (*rsa.PrivateKey, 
 		jwk, err := ParseJWK(t)
 		if err != nil {
 			return nil, err
+		}
+		// Public JWKs parse successfully now, so an absent private half is no
+		// longer an error ParseJWK reports -- it has to be caught here, or this
+		// returns a nil key alongside a nil error.
+		if jwk.PrivateKey == nil {
+			return nil, fmt.Errorf("JWK carries only a public key")
 		}
 		return jwk.PrivateKey, nil
 	}
