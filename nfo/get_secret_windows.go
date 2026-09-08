@@ -22,7 +22,7 @@ func GetSecret(prompt string) string {
 	if err != nil {
 		// Fallback: read without masking.
 		resp, _ := term.ReadPassword(int(handle))
-		fmt.Printf("\n")
+		fmt.Printf("\r\n")
 		return cleanInput(string(resp))
 	}
 	defer term.Restore(int(handle), oldState)
@@ -42,10 +42,10 @@ func GetSecret(prompt string) string {
 		ch := buf[0]
 		switch {
 		case ch == '\r' || ch == '\n':
-			fmt.Printf("\n")
+			fmt.Printf("\r\n")
 			return cleanInput(string(password))
 		case ch == 3: // Ctrl+C
-			fmt.Printf("\n")
+			fmt.Printf("\r\n")
 			return ""
 		case ch == 8: // Backspace
 			if len(password) > 0 {
@@ -57,6 +57,6 @@ func GetSecret(prompt string) string {
 			fmt.Printf("*")
 		}
 	}
-	fmt.Printf("\n")
+	fmt.Printf("\r\n")
 	return cleanInput(string(password))
 }
