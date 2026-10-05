@@ -16,6 +16,7 @@ Requires **Go 1.24+**
 | [eflag](#eflag) | `snugforge/eflag` | Enhanced flag parser with aliases, headers, and multi-values |
 | [cfg](#cfg) | `snugforge/cfg` | INI-style config file parser with type-safe getters |
 | [kvlite](#kvlite) | `snugforge/kvlite` | Key-value storage with BoltDB and in-memory backends |
+| [machineid](#machineid) | `snugforge/machineid` | A per-application ID for this machine's OS install, for keys that open only here |
 | [xsync](#xsync) | `snugforge/xsync` | Concurrency primitives: LimitGroup and atomic BitFlag |
 | [wrotate](#wrotate) | `snugforge/wrotate` | io.WriteCloser with automatic size-based file rotation |
 | [iotimeout](#iotimeout) | `snugforge/iotimeout` | Timeout-wrapped io.Reader and io.ReadCloser |
@@ -351,6 +352,29 @@ if err == kvlite.ErrLocked {
 if err == kvlite.ErrBadPadlock {
     // wrong encryption key
 }
+```
+
+**Changing the padlock**
+
+The padlock only wraps the random key the values are encrypted under, so moving a database to a new padlock re-wraps one key and re-encrypts nothing. `OpenRekeying` opens under the padlock a database should have, and moves one still under an older padlock (tried in order) to it, after an optional copy-aside.
+
+```go
+err := kvlite.ChangePadlock("app.db", oldPadlock, newPadlock) // ErrBadPadlock if old is wrong
+
+store, note, err := kvlite.OpenRekeying("app.db", target, [][]byte{saved, legacyMAC},
+	func() error { return copyAside("app.db") })
+```
+
+---
+
+### machineid
+
+A stable ID for the machine a program runs on, from the operating system's install identity rather than hardware enumeration (a MAC address changes with interface order): `/etc/machine-id` (else `/var/lib/dbus/machine-id`) on Linux and WSL2, `IOPlatformUUID` on macOS, `MachineGuid` on Windows. Returned hashed with the application's name, never raw.
+
+```go
+import "github.com/cmcoffee/snugforge/machineid"
+
+id, err := machineid.ID("myapp") // 64 hex chars; ErrNoID with no usable identity (e.g. an empty machine-id in a container)
 ```
 
 ---

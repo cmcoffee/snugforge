@@ -490,3 +490,89 @@ func Open(filename string, padlock ...byte) (Store, error) {
 	err = db.Set("KVLite", "X", &X)
 	return db, err
 }
+
+// ErrNoPadlock is ChangePadlock on a database that has no padlock yet.
+var ErrNoPadlock = errors.New("database has no padlock to change: open it once first")
+
+// ChangePadlock moves the database file at filename from oldPadlock to
+// newPadlock, without touching the values it holds.
+//
+// The values are encrypted under a random data key, and the padlock only
+// wraps that key, so changing the padlock re-wraps one key: nothing else is
+// re-encrypted. The new wrapping is checked to give back the same key before
+// it is saved, and it is saved in one write, so a failure leaves the
+// database on oldPadlock. ErrBadPadlock when oldPadlock does not open it.
+// The file must not be open elsewhere.
+func ChangePadlock(filename string, oldPadlock, newPadlock []byte) error {
+	db, err := open(filename)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	var X *xLock
+	if _, err = db.Get("KVLite", "X", &X); err != nil {
+		return err
+	}
+	if X == nil || len(X.Msg) == 0 {
+		return ErrNoPadlock
+	}
+	key, err := X.dbunlocker(oldPadlock)
+	if err != nil {
+		return err
+	}
+	// Copied: dblocker appends to the slice it is given.
+	key = append([]byte(nil), key[0:32]...)
+
+	next := new(xLock)
+	next.dblocker(append([]byte(nil), key...), newPadlock)
+	check, err := next.dbunlocker(newPadlock)
+	if err != nil || !bytes.Equal(check[0:32], key) {
+		return fmt.Errorf("the new padlock did not give back the database key, so nothing was changed")
+	}
+	return db.Set("KVLite", "X", &next)
+}
+
+// OpenRekeying opens filename with target, the padlock it should be under.
+// When target does not open it, each of fallbacks is tried in turn (the
+// padlocks it may still be under from before); the first that opens it is
+// moved to target with ChangePadlock, after backup runs, if given, so the
+// caller can copy the file aside first. note says what happened when there
+// is something to say: moved to target, or could not be and why, in which
+// case the store is open under that fallback and the next open tries again.
+// ErrBadPadlock when none of them opens it.
+func OpenRekeying(filename string, target []byte, fallbacks [][]byte, backup func() error) (db Store, note string, err error) {
+	db, err = Open(filename, target...)
+	if err != ErrBadPadlock {
+		return db, "", err
+	}
+	for i, fb := range fallbacks {
+		if len(fb) == 0 {
+			continue
+		}
+		db, err = Open(filename, fb...)
+		if err == ErrBadPadlock {
+			continue
+		}
+		if err != nil {
+			return nil, "", err
+		}
+		db.Close()
+		if backup != nil {
+			if berr := backup(); berr != nil {
+				db, err = Open(filename, fb...)
+				return db, fmt.Sprintf("not moved to the new padlock: could not copy it aside first (%v)", berr), err
+			}
+		}
+		if cerr := ChangePadlock(filename, fb, target); cerr != nil {
+			db, err = Open(filename, fb...)
+			return db, fmt.Sprintf("not moved to the new padlock (%v)", cerr), err
+		}
+		db, err = Open(filename, target...)
+		if err != nil {
+			return nil, "", fmt.Errorf("moved to the new padlock but it did not open after: %w", err)
+		}
+		return db, fmt.Sprintf("moved to the new padlock from padlock %d", i+1), nil
+	}
+	return nil, "", ErrBadPadlock
+}
