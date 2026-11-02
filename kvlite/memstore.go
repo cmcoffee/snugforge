@@ -2,6 +2,7 @@ package kvlite
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -153,29 +154,69 @@ func (K *memStore) CryptSet(table, key string, value interface{}) (err error) {
 // Sets the value for the given key in the specified table.
 // If encrypt_value is true, the value will be encrypted before storing.
 func (K *memStore) set(table, key string, value interface{}, encrypt_value bool) (err error) {
+	v, err := K.encoder.pack(value, encrypt_value)
+	if err != nil {
+		return err
+	}
+
 	K.mutex.Lock()
 	defer K.mutex.Unlock()
 
 	if _, ok := K.kv[table]; !ok {
 		K.kv[table] = make(map[string][]byte)
 	}
-
-	v, err := K.encoder.encode(value)
-	if err != nil {
-		return err
-	}
-
-	if encrypt_value {
-		v = K.encoder.encrypt(v)
-		v = append([]byte{1}, v[0:]...)
-	} else {
-		v = append([]byte{0}, v[0:]...)
-	}
-
 	K.kv[table][key] = v
 
 	return nil
+}
 
+// ForEach reads every key in table, in key order, holding the read lock
+// until it is done, see Store.ForEach.
+func (K *memStore) ForEach(table string, fn func(key string, decode func(out interface{}) error) error) (err error) {
+	K.mutex.RLock()
+	defer K.mutex.RUnlock()
+
+	t, ok := K.kv[table]
+	if !ok {
+		return nil
+	}
+	keys := make([]string, 0, len(t))
+	for k := range t {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if err = each_value(K.encoder, k, t[k], fn); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Batch stages every write fn asks for and makes them under one lock once
+// fn succeeds, see Store.Batch.
+func (K *memStore) Batch(fn func(b Batch) error) (err error) {
+	staged := &staged_batch{encoder: K.encoder}
+	if err = fn(staged); err != nil {
+		return err
+	}
+
+	K.mutex.Lock()
+	defer K.mutex.Unlock()
+
+	for _, op := range staged.ops {
+		if op.unset {
+			if t, ok := K.kv[op.table]; ok {
+				delete(t, op.key)
+			}
+			continue
+		}
+		if _, ok := K.kv[op.table]; !ok {
+			K.kv[op.table] = make(map[string][]byte)
+		}
+		K.kv[op.table][op.key] = op.value
+	}
+	return nil
 }
 
 // Closes the store, deleting all key-value pairs.

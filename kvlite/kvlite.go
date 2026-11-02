@@ -56,6 +56,19 @@ type Store interface {
 	Unset(table, key string) (err error)
 	// Get retrieves value at key in table.
 	Get(table, key string, output interface{}) (found bool, err error)
+	// ForEach reads every key in table in one read transaction, in key order
+	// for a file store. decode decodes the key's value into out and may be
+	// called zero or one times, so keys whose values are not needed skip the
+	// decoding. A missing table calls fn zero times and returns nil; an error
+	// from fn stops the read and is returned as is. fn must not write to the
+	// store, as a write waits on the read fn is part of. Neither key nor the
+	// decoded values point into the file once fn returns, and decode only
+	// works while fn is running.
+	ForEach(table string, fn func(key string, decode func(out interface{}) error) error) (err error)
+	// Batch makes all the writes fn asks of b in one write transaction: one
+	// commit, one sync. An error from fn writes nothing. The writes are
+	// made after fn returns, so reads inside fn do not see them.
+	Batch(fn func(b Batch) error) (err error)
 	// Close closes the kvliter.Store.
 	Close() (err error)
 	// Buckets lists all bucket namespaces, limit_depth limits to first-level buckets
@@ -72,6 +85,7 @@ type Table interface {
 	Get(key string, value interface{}) (found bool, err error)
 	Unset(key string) (err error)
 	Drop() (err error)
+	ForEach(fn func(key string, decode func(out interface{}) error) error) (err error)
 }
 
 // focused represents a focused view on a specific table within a store.
@@ -114,6 +128,11 @@ func (s focused) Unset(key string) (err error) {
 // Drop removes the table from the store.
 func (s focused) Drop() (err error) {
 	return s.store.Drop(s.table)
+}
+
+// ForEach reads every key in the table in one read, see Store.ForEach.
+func (s focused) ForEach(fn func(key string, decode func(out interface{}) error) error) (err error) {
+	return s.store.ForEach(s.table, fn)
 }
 
 type boltDB struct {
@@ -212,6 +231,19 @@ func (e encoder) encode(input interface{}) (output []byte, err error) {
 	return buff.Bytes(), err
 }
 
+// Encodes input to a stored value: a flag byte, 1 when encrypted and 0
+// when not, then the gob bytes, encrypted when encrypt_value is set.
+func (e encoder) pack(input interface{}, encrypt_value bool) (output []byte, err error) {
+	v, err := e.encode(input)
+	if err != nil {
+		return nil, err
+	}
+	if encrypt_value {
+		return append([]byte{1}, e.encrypt(v)...), nil
+	}
+	return append([]byte{0}, v...), nil
+}
+
 // Bucket returns the Store associated with the given bucket name.
 func (K *boltDB) Bucket(name string) Store {
 	return K.Sub(name)
@@ -230,7 +262,10 @@ func (K *boltDB) CountKeys(table string) (count int, err error) {
 		if bucket == nil {
 			return nil
 		}
-		count = bucket.Stats().KeyN
+		c := bucket.Cursor()
+		for k, _ := c.First(); k != nil; k, _ = c.Next() {
+			count++
+		}
 		return nil
 	})
 	return
@@ -268,31 +303,33 @@ func (K *boltDB) Unset(table, key string) (err error) {
 	})
 }
 
-// Drop removes the specified table and all associated buckets.
+// Drop removes the specified table and all associated buckets, in one
+// transaction: either all of them go or none do.
 // If the table does not exist, this operation does nothing.
 func (K *boltDB) Drop(table string) (err error) {
-	tmp, e := K.buckets(false)
-	if e != nil {
-		return e
-	}
-
-	var tables []string
-	for _, v := range tmp {
-		if strings.HasPrefix(v, fmt.Sprintf("%s%c", table, sepr)) || v == table {
-			tables = append(tables, v)
-		}
-	}
-
-	if len(tables) == 0 {
-		return nil
-	}
-
-	for _, v := range tables {
-		err = K.db.Update(func(tx *bolt.Tx) error {
-			return tx.DeleteBucket([]byte(v))
+	sub_prefix := fmt.Sprintf("%s%c", table, sepr)
+	return K.db.Update(func(tx *bolt.Tx) error {
+		var tables [][]byte
+		err := tx.ForEach(func(name []byte, _ *bolt.Bucket) error {
+			name_str := string(name)
+			if name_str == "KVLite" {
+				return nil
+			}
+			if name_str == table || strings.HasPrefix(name_str, sub_prefix) {
+				tables = append(tables, []byte(name_str))
+			}
+			return nil
 		})
-	}
-	return
+		if err != nil {
+			return err
+		}
+		for _, v := range tables {
+			if err := tx.DeleteBucket(v); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // Tables returns a list of table names.
@@ -342,6 +379,55 @@ func (K *boltDB) Get(table, key string, output interface{}) (found bool, err err
 	})
 }
 
+// ForEach reads every key in table in one read transaction, see
+// Store.ForEach.
+func (K *boltDB) ForEach(table string, fn func(key string, decode func(out interface{}) error) error) (err error) {
+	return K.db.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte(table))
+		if bucket == nil {
+			return nil
+		}
+		return bucket.ForEach(func(k, v []byte) error {
+			return each_value(K.encoder, string(k), v, fn)
+		})
+	})
+}
+
+// Batch makes every write fn asks for in one write transaction, see
+// Store.Batch. The values are encoded as fn asks, before the write lock is
+// taken.
+func (K *boltDB) Batch(fn func(b Batch) error) (err error) {
+	staged := &staged_batch{encoder: K.encoder}
+	if err = fn(staged); err != nil {
+		return err
+	}
+	if len(staged.ops) == 0 {
+		return nil
+	}
+	return K.db.Update(func(tx *bolt.Tx) error {
+		for _, op := range staged.ops {
+			if op.unset {
+				bucket := tx.Bucket([]byte(op.table))
+				if bucket == nil {
+					continue
+				}
+				if err := bucket.Delete([]byte(op.key)); err != nil {
+					return err
+				}
+				continue
+			}
+			bucket, err := tx.CreateBucketIfNotExists([]byte(op.table))
+			if err != nil {
+				return err
+			}
+			if err := bucket.Put([]byte(op.key), op.value); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 // Close closes the database connection.
 func (K *boltDB) Close() (err error) {
 	return K.db.Close()
@@ -361,24 +447,15 @@ func (K *boltDB) Set(table, key string, value interface{}) (err error) {
 // Sets the value for the given key in the specified table, optionally encrypting it.
 // The value is encoded before being stored.
 func (K *boltDB) set(table, key string, value interface{}, encrypt_value bool) (err error) {
+	v, err := K.encoder.pack(value, encrypt_value)
+	if err != nil {
+		return err
+	}
 	return K.db.Update(func(tx *bolt.Tx) error {
 		bucket, err := tx.CreateBucketIfNotExists([]byte(table))
 		if err != nil {
 			return err
 		}
-
-		v, err := K.encoder.encode(value)
-		if err != nil {
-			return err
-		}
-
-		if encrypt_value {
-			v = K.encoder.encrypt(v)
-			v = append([]byte{1}, v[0:]...)
-		} else {
-			v = append([]byte{0}, v[0:]...)
-		}
-
 		return bucket.Put([]byte(key), v)
 	})
 }
@@ -392,44 +469,43 @@ func CryptReset(filename string) (err error) {
 
 	db.Set("KVLite", "Reset", true)
 
-	tables, err := db.buckets(false)
-	if err != nil {
-		return err
-	}
-
-	for _, t := range tables {
-		var crypted_keys []string
-		keys, err := db.Keys(t)
-		if err != nil {
-			return err
-		}
-		for _, k := range keys {
-			err = db.db.View(func(tx *bolt.Tx) error {
-				bucket := tx.Bucket([]byte(t))
-				if bucket == nil {
-					return nil
-				}
-				o := bucket.Get([]byte(k))
-				if o != nil && o[0] == 1 {
-					crypted_keys = append(crypted_keys, k)
+	// Find the encrypted keys in one read, then delete them and the KVLite
+	// bucket in one write.
+	crypted_keys := make(map[string][][]byte)
+	err = db.db.View(func(tx *bolt.Tx) error {
+		return tx.ForEach(func(name []byte, b *bolt.Bucket) error {
+			if string(name) == "KVLite" {
+				return nil
+			}
+			return b.ForEach(func(k, v []byte) error {
+				if len(v) > 0 && v[0] == 1 {
+					crypted_keys[string(name)] = append(crypted_keys[string(name)], append([]byte(nil), k...))
 				}
 				return nil
 			})
-			if err != nil {
-				return err
-			}
-		}
-		for _, k := range crypted_keys {
-			err = db.Unset(t, k)
-			if err != nil {
-				return err
-			}
-		}
+		})
+	})
+	if err != nil {
+		db.Close()
+		return err
 	}
+
 	err = db.db.Update(func(tx *bolt.Tx) error {
+		for t, keys := range crypted_keys {
+			bucket := tx.Bucket([]byte(t))
+			if bucket == nil {
+				continue
+			}
+			for _, k := range keys {
+				if err := bucket.Delete(k); err != nil {
+					return err
+				}
+			}
+		}
 		return tx.DeleteBucket([]byte("KVLite"))
 	})
 	if err != nil {
+		db.Close()
 		return err
 	}
 	return db.Close()

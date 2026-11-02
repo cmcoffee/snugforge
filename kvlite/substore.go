@@ -112,6 +112,19 @@ func (d substore) AllTables() (buckets []string, err error) {
 	return d.buckets(false)
 }
 
+// ForEach reads every key in table in one read, see Store.ForEach.
+func (d substore) ForEach(table string, fn func(key string, decode func(out interface{}) error) error) error {
+	return d.db.ForEach(d.apply_prefix(table), fn)
+}
+
+// Batch makes the writes fn asks for in one transaction, with the prefix
+// on each table, see Store.Batch.
+func (d substore) Batch(fn func(b Batch) error) error {
+	return d.db.Batch(func(b Batch) error {
+		return fn(sub_batch{store: d, batch: b})
+	})
+}
+
 // Unset deletes the key/value pair in the specified table.
 func (d substore) Unset(table, key string) error {
 	return d.db.Unset(d.apply_prefix(table), key)
