@@ -545,3 +545,36 @@ func TestJWKSetNoKidTriesEveryKey(t *testing.T) {
 		t.Fatalf("kid-less token: %v", err)
 	}
 }
+
+// PS256 signs with RSA-PSS and verifies only where a caller admits it: the
+// default allow-list stays RS256 and RS512, so a verifier that never asked
+// for PSS does not start taking it.
+func TestPS256RoundTripWhenAdmitted(t *testing.T) {
+	k := key(t)
+	token, err := SignPS256(k, validClaims(map[string]interface{}{"sub": "u1"}), map[string]string{"x5t#S256": "thumb"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hdr, err := DecodeJWTHeader(token)
+	if err != nil || hdr.Algorithm != PS256 {
+		t.Fatalf("header = %+v (%v), want alg PS256", hdr, err)
+	}
+	opts := strictOpts()
+	if _, err := VerifyJWT(token, &k.PublicKey, opts); err == nil {
+		t.Fatal("PS256 was accepted by a verifier that did not admit it")
+	}
+	opts.Algorithms = []JWTAlgorithm{PS256}
+	claims, err := VerifyJWT(token, &k.PublicKey, opts)
+	if err != nil {
+		t.Fatalf("PS256 verify: %v", err)
+	}
+	if claims.String("sub") != "u1" {
+		t.Errorf("sub = %q, want u1", claims.String("sub"))
+	}
+	// A PSS signature is not a PKCS#1 v1.5 one: relabelled RS256, it fails.
+	parts := strings.Split(token, ".")
+	rs, _ := jwtEncode(map[string]string{"alg": "RS256"})
+	if _, err := VerifyJWT(rs+"."+parts[1]+"."+parts[2], &k.PublicKey, strictOpts()); err == nil {
+		t.Error("a PSS signature verified as RS256")
+	}
+}

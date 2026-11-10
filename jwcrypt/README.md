@@ -27,7 +27,7 @@ RSA private key. Optional passphrase for encrypted PKCS8 keys.
 func SignJWT(alg JWTAlgorithm, key *rsa.PrivateKey, claims interface{}, headerFields ...map[string]string) (string, error)
 ```
 SignJWT creates a signed JWT token (header.payload.signature) using the
-specified algorithm (RS256 or RS512). Claims can be map[string]interface{} or a
+specified algorithm (RS256, RS512 or PS256). Claims can be map[string]interface{} or a
 struct. Optional headerFields adds custom JWT header fields (e.g. "kid",
 "type").
 
@@ -37,6 +37,13 @@ struct. Optional headerFields adds custom JWT header fields (e.g. "kid",
 func SignRS256(key *rsa.PrivateKey, claims interface{}, headerFields ...map[string]string) (string, error)
 ```
 SignRS256 creates a signed JWT token using RS256 (RSA SHA-256).
+
+#### func  SignPS256
+
+```go
+func SignPS256(key *rsa.PrivateKey, claims interface{}, headerFields ...map[string]string) (string, error)
+```
+SignPS256 creates a signed JWT token using PS256 (RSA-PSS SHA-256).
 
 #### func  SignRS512
 
@@ -183,6 +190,9 @@ JWT signing algorithm.
 const (
 	RS256 JWTAlgorithm = "RS256"
 	RS512 JWTAlgorithm = "RS512"
+	// PS256 is RSA-PSS with SHA-256, the salt as long as the hash (RFC 7518
+	// 3.5). Microsoft Entra asks for it on a certificate's client assertion.
+	PS256 JWTAlgorithm = "PS256"
 )
 ```
 

@@ -162,7 +162,12 @@ func VerifyJWT(token string, key *rsa.PublicKey, opts VerifyOptions) (Claims, er
 	}
 	h := hash.New()
 	h.Write([]byte(parts[0] + "." + parts[1]))
-	if err := rsa.VerifyPKCS1v15(key, hash, h.Sum(nil), sig); err != nil {
+	if hdr.Algorithm == PS256 {
+		err = rsa.VerifyPSS(key, hash, h.Sum(nil), sig, pssOptions)
+	} else {
+		err = rsa.VerifyPKCS1v15(key, hash, h.Sum(nil), sig)
+	}
+	if err != nil {
 		return nil, fmt.Errorf("signature verification failed: %w", err)
 	}
 
@@ -243,6 +248,8 @@ func verifyHash(alg JWTAlgorithm, allowed []JWTAlgorithm) (crypto.Hash, error) {
 		return crypto.SHA256, nil
 	case RS512:
 		return crypto.SHA512, nil
+	case PS256:
+		return crypto.SHA256, nil
 	}
 	return 0, fmt.Errorf("unsupported JWT algorithm: %s", alg)
 }

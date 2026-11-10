@@ -282,10 +282,16 @@ type JWTAlgorithm string
 const (
 	RS256 JWTAlgorithm = "RS256"
 	RS512 JWTAlgorithm = "RS512"
+	// PS256 is RSA-PSS with SHA-256, the salt as long as the hash (RFC 7518
+	// 3.5). Microsoft Entra asks for it on a certificate's client assertion.
+	PS256 JWTAlgorithm = "PS256"
 )
 
+// pssOptions are PS256's: a salt as long as the hash, as RFC 7518 requires.
+var pssOptions = &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash}
+
 // SignJWT creates a signed JWT token (header.payload.signature) using the
-// specified algorithm (RS256 or RS512). Claims can be map[string]interface{}
+// specified algorithm (RS256, RS512 or PS256). Claims can be map[string]interface{}
 // or a struct. Optional headerFields adds custom JWT header fields (e.g. "kid", "type").
 func SignJWT(alg JWTAlgorithm, key *rsa.PrivateKey, claims interface{}, headerFields ...map[string]string) (string, error) {
 	var hash crypto.Hash
@@ -294,6 +300,8 @@ func SignJWT(alg JWTAlgorithm, key *rsa.PrivateKey, claims interface{}, headerFi
 		hash = crypto.SHA256
 	case RS512:
 		hash = crypto.SHA512
+	case PS256:
+		hash = crypto.SHA256
 	default:
 		return "", fmt.Errorf("unsupported JWT algorithm: %s", alg)
 	}
@@ -317,7 +325,12 @@ func SignJWT(alg JWTAlgorithm, key *rsa.PrivateKey, claims interface{}, headerFi
 
 	h := hash.New()
 	h.Write([]byte(fmt.Sprintf("%s.%s", header, payload)))
-	sig, err := rsa.SignPKCS1v15(rand.Reader, key, hash, h.Sum(nil))
+	var sig []byte
+	if alg == PS256 {
+		sig, err = rsa.SignPSS(rand.Reader, key, hash, h.Sum(nil), pssOptions)
+	} else {
+		sig, err = rsa.SignPKCS1v15(rand.Reader, key, hash, h.Sum(nil))
+	}
 	if err != nil {
 		return "", err
 	}
@@ -333,6 +346,11 @@ func SignJWT(alg JWTAlgorithm, key *rsa.PrivateKey, claims interface{}, headerFi
 // SignRS256 creates a signed JWT token using RS256 (RSA SHA-256).
 func SignRS256(key *rsa.PrivateKey, claims interface{}, headerFields ...map[string]string) (string, error) {
 	return SignJWT(RS256, key, claims, headerFields...)
+}
+
+// SignPS256 creates a signed JWT token using PS256 (RSA-PSS SHA-256).
+func SignPS256(key *rsa.PrivateKey, claims interface{}, headerFields ...map[string]string) (string, error) {
+	return SignJWT(PS256, key, claims, headerFields...)
 }
 
 // SignRS512 creates a signed JWT token using RS512 (RSA SHA-512).
