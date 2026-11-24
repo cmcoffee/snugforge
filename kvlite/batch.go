@@ -85,13 +85,13 @@ func (b sub_batch) Unset(table, key string) (err error) {
 // works only until fn returns, as value may point into the database file.
 // It never hands that memory on: gob copies what it decodes out of its own
 // buffer, and decrypt works on a copy.
-func each_value(e encoder, key string, value []byte, fn func(key string, decode func(out interface{}) error) error) error {
+func each_value(e encoder, table, key string, value []byte, fn func(key string, decode func(out interface{}) error) error) error {
 	live := true
 	decode := func(out interface{}) error {
 		if !live {
 			return ErrDecodeAfterReturn
 		}
-		return e.decode(value, out)
+		return e.decode(table, key, value, out)
 	}
 	err := fn(key, decode)
 	live = false

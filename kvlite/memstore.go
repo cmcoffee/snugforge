@@ -122,7 +122,7 @@ func (K *memStore) Get(table, key string, output interface{}) (found bool, err e
 	defer K.mutex.RUnlock()
 	if t, ok := K.kv[table]; ok {
 		if v, ok := t[key]; ok {
-			return true, K.encoder.decode(v, output)
+			return true, K.encoder.decode(table, key, v, output)
 		}
 	}
 	return false, nil
@@ -186,7 +186,7 @@ func (K *memStore) ForEach(table string, fn func(key string, decode func(out int
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		if err = each_value(K.encoder, k, t[k], fn); err != nil {
+		if err = each_value(K.encoder, table, k, t[k], fn); err != nil {
 			return err
 		}
 	}

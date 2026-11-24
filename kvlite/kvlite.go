@@ -204,17 +204,23 @@ func (e encoder) decrypt(input []byte) []byte {
 	return buff
 }
 
-// Decodes input in to object.
-func (e encoder) decode(input []byte, output interface{}) (err error) {
+// Decodes input, stored at table and key, in to object. Any flag but the two
+// ciphers is read as plain, as it always was.
+func (e encoder) decode(table, key string, input []byte, output interface{}) (err error) {
 	var i []byte
 
 	if input == nil {
 		return nil
 	}
 
-	if input[0] == 1 {
+	switch input[0] {
+	case flagCFB:
 		i = e.decrypt(input[1:])
-	} else {
+	case flagGCM:
+		if i, err = e.openGCM(table, key, input[1:]); err != nil {
+			return err
+		}
+	default:
 		i = input[1:]
 	}
 
@@ -239,9 +245,9 @@ func (e encoder) pack(input interface{}, encrypt_value bool) (output []byte, err
 		return nil, err
 	}
 	if encrypt_value {
-		return append([]byte{1}, e.encrypt(v)...), nil
+		return append([]byte{flagCFB}, e.encrypt(v)...), nil
 	}
-	return append([]byte{0}, v...), nil
+	return append([]byte{flagPlain}, v...), nil
 }
 
 // Bucket returns the Store associated with the given bucket name.
@@ -375,7 +381,7 @@ func (K *boltDB) Get(table, key string, output interface{}) (found bool, err err
 				return nil
 			}
 		}
-		return K.encoder.decode(data, output)
+		return K.encoder.decode(table, key, data, output)
 	})
 }
 
@@ -388,7 +394,7 @@ func (K *boltDB) ForEach(table string, fn func(key string, decode func(out inter
 			return nil
 		}
 		return bucket.ForEach(func(k, v []byte) error {
-			return each_value(K.encoder, string(k), v, fn)
+			return each_value(K.encoder, table, string(k), v, fn)
 		})
 	})
 }
@@ -478,7 +484,7 @@ func CryptReset(filename string) (err error) {
 				return nil
 			}
 			return b.ForEach(func(k, v []byte) error {
-				if len(v) > 0 && v[0] == 1 {
+				if isEncrypted(v) {
 					crypted_keys[string(name)] = append(crypted_keys[string(name)], append([]byte(nil), k...))
 				}
 				return nil
