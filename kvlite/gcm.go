@@ -95,17 +95,27 @@ func isEncrypted(v []byte) bool {
 // long, large enough that a big store is not one commit per value.
 const upgradeChunk = 500
 
+// UpgradeProgress is how far an UpgradeCipher pass has got. Tables is known
+// from the start, so a caller can say "140 of 312" while most tables turn out
+// to hold nothing to upgrade.
+type UpgradeProgress struct {
+	Tables     int // tables in the store
+	TablesDone int // tables scanned, and upgraded where they needed it
+	Upgraded   int // values re-encrypted so far
+}
+
 // UpgradeCipher re-encrypts every AES-CFB value in s with AES-256-GCM, bound
 // to its table and key. Plain and GCM values are left as they are, so it is
 // safe to run on every open, and on a store being written meanwhile: each
 // value is re-read and re-written inside the same write transaction, so a
-// newer write is never overwritten. progress, when set, is told the running
-// count after each chunk. Returns how many values it re-encrypted.
+// newer write is never overwritten. progress, when set, is told where the
+// pass is after each chunk and after each table, whether or not that table
+// held anything to upgrade. Returns how many values it re-encrypted.
 //
 // The CFB bytes stay in the file's freed pages until the file is compacted.
 //
 // Only a file-backed store holds anything to upgrade; any other returns 0.
-func UpgradeCipher(s Store, progress func(done int)) (n int, err error) {
+func UpgradeCipher(s Store, progress func(UpgradeProgress)) (n int, err error) {
 	K, ok := s.(*boltDB)
 	if !ok {
 		return 0, nil
@@ -114,7 +124,12 @@ func UpgradeCipher(s Store, progress func(done int)) (n int, err error) {
 	if err != nil {
 		return 0, err
 	}
-	for _, table := range tables {
+	tell := func(done int) {
+		if progress != nil {
+			progress(UpgradeProgress{Tables: len(tables), TablesDone: done, Upgraded: n})
+		}
+	}
+	for ti, table := range tables {
 		var keys [][]byte
 		err = K.db.View(func(tx *bolt.Tx) error {
 			b := tx.Bucket([]byte(table))
@@ -163,10 +178,11 @@ func UpgradeCipher(s Store, progress func(done int)) (n int, err error) {
 				return n, err
 			}
 			n += done
-			if progress != nil && done > 0 {
-				progress(n)
+			if end < len(keys) {
+				tell(ti) // mid-table: this one is not done yet
 			}
 		}
+		tell(ti + 1)
 	}
 	return n, nil
 }

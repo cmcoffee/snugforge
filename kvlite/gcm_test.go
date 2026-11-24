@@ -183,16 +183,27 @@ func TestUpgradeCipher(t *testing.T) {
 	plain := raw(t, db, "t", "plain")
 	already := raw(t, db, "t", "already")
 
-	calls := 0
-	n, err := UpgradeCipher(db, func(int) { calls++ })
+	var seen []UpgradeProgress
+	n, err := UpgradeCipher(db, func(p UpgradeProgress) { seen = append(seen, p) })
 	if err != nil {
 		t.Fatal(err)
 	}
 	if want := upgradeChunk + 3 + 2; n != want {
 		t.Fatalf("re-encrypted %d, want %d", n, want)
 	}
-	if calls < 2 {
-		t.Errorf("progress was told %d time(s); want once per chunk", calls)
+	// Told after the first chunk of the big table and after every table, and
+	// the last word is all tables done with the full count.
+	if len(seen) < 4 {
+		t.Fatalf("progress was told %d time(s): %+v; want each table and the mid-table chunk", len(seen), seen)
+	}
+	last := seen[len(seen)-1]
+	if last.TablesDone != last.Tables || last.Upgraded != n || last.Tables < 3 {
+		t.Errorf("last progress %+v; want every table done and %d upgraded", last, n)
+	}
+	for i := 1; i < len(seen); i++ {
+		if seen[i].TablesDone < seen[i-1].TablesDone || seen[i].Upgraded < seen[i-1].Upgraded {
+			t.Errorf("progress went backwards: %+v then %+v", seen[i-1], seen[i])
+		}
 	}
 	if !bytes.Equal(raw(t, db, "t", "plain"), plain) || !bytes.Equal(raw(t, db, "t", "already"), already) {
 		t.Error("a plain or GCM value was rewritten")
@@ -221,8 +232,13 @@ func TestUpgradeCipher(t *testing.T) {
 	if _, err := db.Get("many", "c0", &i); err != nil || i != 2 {
 		t.Errorf("many/c0 reads %d, %v", i, err)
 	}
-	if n, err := UpgradeCipher(db, nil); n != 0 || err != nil {
+	// A second run finds nothing, and still says how far its scan has got.
+	var again []UpgradeProgress
+	if n, err := UpgradeCipher(db, func(p UpgradeProgress) { again = append(again, p) }); n != 0 || err != nil {
 		t.Errorf("a second run re-encrypted %d (%v)", n, err)
+	}
+	if len(again) == 0 || again[len(again)-1].TablesDone != again[len(again)-1].Tables {
+		t.Errorf("a run with nothing to upgrade reported %+v; want each table scanned", again)
 	}
 	if n, _ := UpgradeCipher(MemStore(), nil); n != 0 {
 		t.Errorf("a memory store reported %d upgraded", n)
