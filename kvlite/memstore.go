@@ -154,7 +154,7 @@ func (K *memStore) CryptSet(table, key string, value interface{}) (err error) {
 // Sets the value for the given key in the specified table.
 // If encrypt_value is true, the value will be encrypted before storing.
 func (K *memStore) set(table, key string, value interface{}, encrypt_value bool) (err error) {
-	v, err := K.encoder.pack(value, encrypt_value)
+	v, err := K.encoder.pack(table, key, value, encrypt_value)
 	if err != nil {
 		return err
 	}

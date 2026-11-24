@@ -1,6 +1,7 @@
 package kvlite
 
 import (
+	"bytes"
 	"errors"
 	"path/filepath"
 	"reflect"
@@ -116,21 +117,30 @@ func TestGCMValuesRefuseTampering(t *testing.T) {
 	}
 }
 
-// This release still writes CFB: nothing it stores is unreadable to the
-// release before it.
-func TestCryptSetStillWritesCFB(t *testing.T) {
+// CryptSet, Batch and a sub-store write GCM, a fresh nonce each time, and
+// read back what was written.
+func TestCryptSetWritesGCM(t *testing.T) {
 	db, _, _ := open_test_db(t, "padlock")
 	defer db.Close()
 	db.CryptSet("t", "a", "x")
+	db.CryptSet("t", "a2", "x")
 	db.Batch(func(b Batch) error { return b.CryptSet("t", "b", "y") })
-	for _, k := range []string{"a", "b"} {
-		if v := raw(t, db, "t", k); len(v) == 0 || v[0] != flagCFB {
-			t.Errorf("%s was written with flag %v, want CFB until GCM writes are switched on", k, v[:1])
+	db.Sub("s").CryptSet("t", "c", "z")
+	for _, at := range [][2]string{{"t", "a"}, {"t", "b"}, {"s\x1ft", "c"}} {
+		if v := raw(t, db, at[0], at[1]); len(v) == 0 || v[0] != flagGCM {
+			t.Errorf("%s/%s was written with flag %v, want GCM", at[0], at[1], v[:1])
 		}
+	}
+	if bytes.Equal(raw(t, db, "t", "a")[1:], raw(t, db, "t", "a2")[1:]) {
+		t.Error("the same value written twice came out the same: no fresh nonce")
+	}
+	var s string
+	if _, err := db.Sub("s").Get("t", "c", &s); err != nil || s != "z" {
+		t.Fatalf("sub-store GCM round trip = %q, %v", s, err)
 	}
 	m := MemStore()
 	m.CryptSet("t", "a", "x")
-	var s string
+	s = ""
 	if _, err := m.Get("t", "a", &s); err != nil || s != "x" {
 		t.Fatalf("memstore round trip = %q, %v", s, err)
 	}
@@ -155,5 +165,66 @@ func TestCryptResetClearsGCMValues(t *testing.T) {
 	keys, _ := db.Keys("t")
 	if !reflect.DeepEqual(keys, []string{"plain"}) {
 		t.Fatalf("after reset, keys = %v; want only the plain value", keys)
+	}
+}
+
+// UpgradeCipher re-encrypts the CFB values a file holds, in the root and in
+// sub-stores, as GCM bound to where each is, and leaves plain and GCM values
+// alone. Everything reads as before, and a second run finds nothing.
+func TestUpgradeCipher(t *testing.T) {
+	db, K, file := open_test_db(t, "padlock")
+	for i := 0; i < upgradeChunk+3; i++ {
+		old_set(t, K, "many", string(rune('a'+i%26))+string(rune('0'+i/26)), i, true)
+	}
+	old_set(t, K, "t", "secret", record{"secret", []byte{4, 5}}, true)
+	old_set(t, K, "tenant\x1ft", "sub", "sub secret", true)
+	old_set(t, K, "t", "plain", "plain", false)
+	db.CryptSet("t", "already", "gcm")
+	plain := raw(t, db, "t", "plain")
+	already := raw(t, db, "t", "already")
+
+	calls := 0
+	n, err := UpgradeCipher(db, func(int) { calls++ })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := upgradeChunk + 3 + 2; n != want {
+		t.Fatalf("re-encrypted %d, want %d", n, want)
+	}
+	if calls < 2 {
+		t.Errorf("progress was told %d time(s); want once per chunk", calls)
+	}
+	if !bytes.Equal(raw(t, db, "t", "plain"), plain) || !bytes.Equal(raw(t, db, "t", "already"), already) {
+		t.Error("a plain or GCM value was rewritten")
+	}
+	db.Close()
+
+	db, err = Open(file, []byte("padlock")...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, at := range [][2]string{{"t", "secret"}, {"tenant\x1ft", "sub"}} {
+		if v := raw(t, db, at[0], at[1]); len(v) == 0 || v[0] != flagGCM {
+			t.Errorf("%s/%s is still flag %v", at[0], at[1], v[:1])
+		}
+	}
+	var r record
+	var s string
+	var i int
+	if _, err := db.Get("t", "secret", &r); err != nil || r.Name != "secret" {
+		t.Errorf("secret reads %v, %v", r, err)
+	}
+	if _, err := db.Sub("tenant").Get("t", "sub", &s); err != nil || s != "sub secret" {
+		t.Errorf("sub-store secret reads %q, %v", s, err)
+	}
+	if _, err := db.Get("many", "c0", &i); err != nil || i != 2 {
+		t.Errorf("many/c0 reads %d, %v", i, err)
+	}
+	if n, err := UpgradeCipher(db, nil); n != 0 || err != nil {
+		t.Errorf("a second run re-encrypted %d (%v)", n, err)
+	}
+	if n, _ := UpgradeCipher(MemStore(), nil); n != 0 {
+		t.Errorf("a memory store reported %d upgraded", n)
 	}
 }

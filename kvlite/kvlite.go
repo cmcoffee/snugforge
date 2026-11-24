@@ -237,15 +237,19 @@ func (e encoder) encode(input interface{}) (output []byte, err error) {
 	return buff.Bytes(), err
 }
 
-// Encodes input to a stored value: a flag byte, 1 when encrypted and 0
-// when not, then the gob bytes, encrypted when encrypt_value is set.
-func (e encoder) pack(input interface{}, encrypt_value bool) (output []byte, err error) {
+// Encodes input to a stored value: a flag byte, then the gob bytes, sealed
+// with AES-256-GCM for table and key when encrypt_value is set (gcm.go).
+func (e encoder) pack(table, key string, input interface{}, encrypt_value bool) (output []byte, err error) {
 	v, err := e.encode(input)
 	if err != nil {
 		return nil, err
 	}
 	if encrypt_value {
-		return append([]byte{flagCFB}, e.encrypt(v)...), nil
+		sealed, err := e.sealGCM(table, key, v)
+		if err != nil {
+			return nil, err
+		}
+		return append([]byte{flagGCM}, sealed...), nil
 	}
 	return append([]byte{flagPlain}, v...), nil
 }
@@ -453,7 +457,7 @@ func (K *boltDB) Set(table, key string, value interface{}) (err error) {
 // Sets the value for the given key in the specified table, optionally encrypting it.
 // The value is encoded before being stored.
 func (K *boltDB) set(table, key string, value interface{}, encrypt_value bool) (err error) {
-	v, err := K.encoder.pack(value, encrypt_value)
+	v, err := K.encoder.pack(table, key, value, encrypt_value)
 	if err != nil {
 		return err
 	}

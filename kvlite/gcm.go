@@ -10,10 +10,9 @@ package kvlite
 //
 // Stored form: flagGCM, then the 12-byte nonce, then the ciphertext and tag.
 //
-// This release READS GCM values and still writes CFB, so a database never
-// holds a value an earlier release cannot read. A later release switches
-// CryptSet to sealGCM and re-encrypts what is stored; by then every release
-// someone might roll back to reads both.
+// CryptSet writes GCM. CFB values written before still read, and
+// UpgradeCipher re-encrypts them. v0.3.5 was the release that only read GCM,
+// so a rollback to it or later still reads everything.
 
 import (
 	"crypto/aes"
@@ -21,6 +20,8 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"errors"
+
+	bolt "go.etcd.io/bbolt"
 )
 
 // The first byte of a stored value says what follows it.
@@ -87,4 +88,85 @@ func (e encoder) openGCM(table, key string, sealed []byte) ([]byte, error) {
 // isEncrypted reports whether a stored value is under either cipher.
 func isEncrypted(v []byte) bool {
 	return len(v) > 0 && (v[0] == flagCFB || v[0] == flagGCM)
+}
+
+// upgradeChunk is how many values UpgradeCipher re-encrypts in one write
+// transaction: small enough that a write waiting behind it is not held up
+// long, large enough that a big store is not one commit per value.
+const upgradeChunk = 500
+
+// UpgradeCipher re-encrypts every AES-CFB value in s with AES-256-GCM, bound
+// to its table and key. Plain and GCM values are left as they are, so it is
+// safe to run on every open, and on a store being written meanwhile: each
+// value is re-read and re-written inside the same write transaction, so a
+// newer write is never overwritten. progress, when set, is told the running
+// count after each chunk. Returns how many values it re-encrypted.
+//
+// The CFB bytes stay in the file's freed pages until the file is compacted.
+//
+// Only a file-backed store holds anything to upgrade; any other returns 0.
+func UpgradeCipher(s Store, progress func(done int)) (n int, err error) {
+	K, ok := s.(*boltDB)
+	if !ok {
+		return 0, nil
+	}
+	tables, err := K.buckets(false)
+	if err != nil {
+		return 0, err
+	}
+	for _, table := range tables {
+		var keys [][]byte
+		err = K.db.View(func(tx *bolt.Tx) error {
+			b := tx.Bucket([]byte(table))
+			if b == nil {
+				return nil
+			}
+			return b.ForEach(func(k, v []byte) error {
+				if len(v) > 0 && v[0] == flagCFB {
+					keys = append(keys, append([]byte(nil), k...))
+				}
+				return nil
+			})
+		})
+		if err != nil {
+			return n, err
+		}
+		for start := 0; start < len(keys); start += upgradeChunk {
+			end := start + upgradeChunk
+			if end > len(keys) {
+				end = len(keys)
+			}
+			done := 0
+			err = K.db.Update(func(tx *bolt.Tx) error {
+				done = 0
+				b := tx.Bucket([]byte(table))
+				if b == nil {
+					return nil
+				}
+				for _, k := range keys[start:end] {
+					v := b.Get(k)
+					if len(v) == 0 || v[0] != flagCFB {
+						continue // written since, or gone
+					}
+					sealed, err := K.encoder.sealGCM(table, string(k), K.encoder.decrypt(v[1:]))
+					if err != nil {
+						return err
+					}
+					if err := b.Put(k, append([]byte{flagGCM}, sealed...)); err != nil {
+						return err
+					}
+					done++
+				}
+				return nil
+			})
+			if err != nil {
+				return n, err
+			}
+			n += done
+			if progress != nil && done > 0 {
+				progress(n)
+			}
+		}
+	}
+	return n, nil
 }

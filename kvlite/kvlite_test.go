@@ -271,7 +271,7 @@ func TestBatchCommits(t *testing.T) {
 			if v := raw(t, db, "one", "a"); v[0] != 0 {
 				t.Fatalf("Set flag = %d", v[0])
 			}
-			if v := raw(t, db, "two", "b"); v[0] != 1 {
+			if v := raw(t, db, "two", "b"); v[0] != flagGCM {
 				t.Fatalf("CryptSet flag = %d", v[0])
 			}
 		}
@@ -575,13 +575,18 @@ func TestOldFilesReadTheSame(t *testing.T) {
 		t.Fatalf("count = %d", c)
 	}
 
-	// The new paths write byte for byte what the old one did.
+	// Plain writes store byte for byte what the old path did. Encrypted
+	// writes are GCM now (gcm.go), not the old CFB bytes, and read the same.
 	db.Set("new", "plain", record{"plain", []byte{1, 2, 3}})
 	db.Batch(func(b Batch) error { return b.CryptSet("new", "secret", record{"secret", []byte{4, 5}}) })
 	if !bytes.Equal(raw(t, db, "new", "plain"), old_plain) {
 		t.Fatal("Set stores different bytes than before")
 	}
-	if !bytes.Equal(raw(t, db, "new", "secret"), old_secret) {
-		t.Fatal("Batch CryptSet stores different bytes than before")
+	if v := raw(t, db, "new", "secret"); len(v) == 0 || v[0] != flagGCM || bytes.Equal(v, old_secret) {
+		t.Fatal("Batch CryptSet did not write a GCM value")
+	}
+	var r record
+	if _, err := db.Get("new", "secret", &r); err != nil || !reflect.DeepEqual(r, record{"secret", []byte{4, 5}}) {
+		t.Fatalf("the GCM value reads %v, %v", r, err)
 	}
 }

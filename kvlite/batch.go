@@ -52,7 +52,7 @@ func (b *staged_batch) Unset(table, key string) (err error) {
 
 // set encodes value as Set and CryptSet store it and stages the write.
 func (b *staged_batch) set(table, key string, value interface{}, encrypt_value bool) (err error) {
-	v, err := b.encoder.pack(value, encrypt_value)
+	v, err := b.encoder.pack(table, key, value, encrypt_value)
 	if err != nil {
 		return err
 	}
